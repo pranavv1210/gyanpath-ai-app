@@ -1,0 +1,28 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.env # For environment variables later
+
+# Node.js
+node_modules/
+frontend-app/dist/ # Vite build output
+frontend-app/.vite/ # Vite cache
+.env.local # For frontend environment variables later
+
+# General OS files
+.DS_Store
+Thumbs.db
+
+# Postman (if you save collection/environment files locally and don't want them in Git)
+*.postman_environment.json
+*.postman_collection.json
+
+# Database specific files (e.g. if you ever have local DB files, though we use services for now)
+*.db
+*.sqlite
+data/ # Common for local db data folders
+
+# Logs
+*.log
+logs/
