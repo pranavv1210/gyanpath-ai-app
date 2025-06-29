@@ -82,7 +82,7 @@ class Resource(db.Model):
         return f'<Resource {self.title}>'
 
 # --- Helper Function for Neo4j Knowledge Graph ---
-def process_resource_for_kg(resource_id, title, description, url): # Added url parameter
+def process_resource_for_kg(resource_id, title, description, url):
     if not neo4j_driver:
         logger.warning(f"Neo4j driver not available. Skipping KG processing for resource {resource_id}.")
         return
@@ -109,7 +109,7 @@ def process_resource_for_kg(resource_id, title, description, url): # Added url p
                 "MERGE (r:Resource {resource_id: $resource_id}) "
                 "ON CREATE SET r.title = $title, r.url = $url, r.createdAt = timestamp() "
                 "ON MATCH SET r.title = $title, r.url = $url",
-                resource_id=resource_id, title=title, url=url # Pass url here
+                resource_id=resource_id, title=title, url=url
             )
 
             for concept_name in concepts_list:
@@ -159,7 +159,7 @@ def create_user():
         return jsonify({"message": f"User {new_user.email} created successfully with ID {new_user.id}"}), 201
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Error creating user: {e}") # Added logging
+        logger.error(f"Error creating user: {e}")
         return jsonify({"error": "Failed to create user", "details": str(e)}), 500
 
 @app.route('/login', methods=['POST'])
@@ -188,7 +188,6 @@ def get_users():
     users_list = [{"id": user.id, "email": user.email} for user in users]
     return jsonify(users_list)
 
-# Endpoint to add new learning resources (POST)
 @app.route('/resources', methods=['POST'])
 def add_resource():
     data = request.get_json()
@@ -222,9 +221,8 @@ def add_resource():
         db.session.add(new_resource)
         db.session.commit()
 
-        # Call NLP processing and Knowledge Graph update
         if nlp and neo4j_driver:
-            process_resource_for_kg(new_resource.id, new_resource.title, new_resource.description, new_resource.url) # Pass url
+            process_resource_for_kg(new_resource.id, new_resource.title, new_resource.description, new_resource.url)
         else:
             logger.warning(f"Skipping KG processing for resource {new_resource.id} due to missing NLP or Neo4j connection.")
 
@@ -239,7 +237,6 @@ def add_resource():
         logger.error(f"Error adding resource: {e}")
         return jsonify({"error": "Failed to add resource", "details": str(e)}), 500
 
-# Endpoint to retrieve all learning resources (GET)
 @app.route('/resources', methods=['GET'])
 def get_resources():
     try:
@@ -256,7 +253,7 @@ def get_resources():
                 "difficulty": resource.difficulty,
                 "estimated_time_minutes": resource.estimated_time_minutes,
                 "contributed_by_user_id": resource.contributed_by_user_id,
-                "created_at": resource.created_at.isoformat(), # Convert datetime to string
+                "created_at": resource.created_at.isoformat(),
                 "updated_at": resource.updated_at.isoformat()
             }
             resources_list.append(resource_data)
@@ -289,12 +286,192 @@ def add_concept():
         logger.error(f"Error adding concept via endpoint: {e}")
         return jsonify({"error": "Failed to add concept to Neo4j", "details": str(e)}), 500
 
+@app.route('/concepts/relate', methods=['POST'])
+def relate_concepts():
+    if not neo4j_driver:
+        return jsonify({"error": "Neo4j connection not available"}), 500
+
+    data = request.get_json()
+    source_concept_name = data.get('source_concept')
+    target_concept_name = data.get('target_concept')
+    relationship_type = data.get('relationship_type')
+
+    if not all([source_concept_name, target_concept_name, relationship_type]):
+        return jsonify({"error": "Missing required fields: source_concept, target_concept, relationship_type"}), 400
+
+    try:
+        with neo4j_driver.session() as session:
+            session.run("MERGE (c1:Concept {name: $source_name})", source_name=source_concept_name)
+            session.run("MERGE (c2:Concept {name: $target_name})", target_name=target_concept_name)
+
+            query = (
+                f"MATCH (c1:Concept {{name: $source_name}}) "
+                f"MATCH (c2:Concept {{name: $target_name}}) "
+                f"MERGE (c1)-[r:{relationship_type}]->(c2) "
+                f"ON CREATE SET r.createdAt = timestamp() "
+                f"RETURN c1.name, type(r), c2.name"
+            )
+            result = session.run(query, source_name=source_concept_name, target_name=target_concept_name)
+            record = result.single()
+
+            return jsonify({
+                "message": f"Relationship '{record[1]}' created between '{record[0]}' and '{record[2]}'.",
+                "source_concept": record[0],
+                "relationship_type": record[1],
+                "target_concept": record[2]
+            }), 201
+    except Exception as e:
+        logger.error(f"Error creating concept relationship: {e}")
+        return jsonify({"error": "Failed to create concept relationship", "details": str(e)}), 500
+
+@app.route('/users/<int:user_id>/knowledge', methods=['POST'])
+def update_user_knowledge(user_id):
+    if not neo4j_driver:
+        return jsonify({"error": "Neo4j connection not available"}), 500
+
+    user_exists_pg = User.query.get(user_id)
+    if not user_exists_pg:
+        return jsonify({"error": "User not found in PostgreSQL"}), 404
+
+    data = request.get_json()
+    concept_name = data.get('concept_name')
+    level = data.get('level')
+
+    if not concept_name or level is None:
+        return jsonify({"error": "Missing required fields: concept_name, level"}), 400
+    
+    if not isinstance(level, (int, float)) or not (0 <= level <= 5):
+        return jsonify({"error": "Level must be a number between 0 and 5"}), 400
+
+    try:
+        with neo4j_driver.session() as session:
+            session.run("MERGE (c:Concept {name: $concept_name})", concept_name=concept_name)
+
+            session.run(
+                "MERGE (lp:LearnerProfile {user_id: $user_id}) "
+                "ON CREATE SET lp.createdAt = timestamp()",
+                user_id=user_id
+            )
+
+            query = (
+                "MATCH (lp:LearnerProfile {user_id: $user_id}) "
+                "MATCH (c:Concept {name: $concept_name}) "
+                "MERGE (lp)-[k:KNOWS_LEVEL]->(c) "
+                "SET k.level = $level, k.updatedAt = timestamp() "
+                "RETURN lp.user_id, c.name, k.level"
+            )
+            result = session.run(query, user_id=user_id, concept_name=concept_name, level=level)
+            record = result.single()
+
+            return jsonify({
+                "message": f"User {record[0]}'s knowledge for '{record[1]}' updated to level {record[2]}.",
+                "user_id": record[0],
+                "concept": record[1],
+                "level": record[2]
+            }), 200
+    except Exception as e:
+        logger.error(f"Error updating user knowledge: {e}")
+        return jsonify({"error": "Failed to update user knowledge", "details": str(e)}), 500
+
+# <<< NEW ENDPOINT: Generate a basic learning path
+@app.route('/users/<int:user_id>/learning_path', methods=['GET'])
+def generate_learning_path(user_id):
+    if not neo4j_driver:
+        return jsonify({"error": "Neo4j connection not available"}), 500
+    
+    # Get target_concept from query parameters
+    target_concept = request.args.get('target_concept')
+    if not target_concept:
+        return jsonify({"error": "target_concept query parameter is required"}), 400
+
+    user_exists_pg = User.query.get(user_id)
+    if not user_exists_pg:
+        return jsonify({"error": "User not found in PostgreSQL"}), 404
+
+    try:
+        with neo4j_driver.session() as session:
+            # Step 1: Ensure target concept exists in KG, if not, create it
+            session.run("MERGE (tc:Concept {name: $target_concept})", target_concept=target_concept)
+
+            # Step 2: Get user's current knowledge (concepts they know and their level)
+            user_known_concepts_query = session.run(
+                "MATCH (lp:LearnerProfile {user_id: $user_id})-[k:KNOWS_LEVEL]->(c:Concept) "
+                "RETURN c.name AS concept_name, k.level AS level",
+                user_id=user_id
+            )
+            user_known_concepts = {r["concept_name"]: r["level"] for r in user_known_concepts_query}
+            logger.info(f"User {user_id} known concepts: {user_known_concepts}")
+
+            # Step 3: Find prerequisite concepts for the target concept that the user doesn't know well
+            # And resources that teach them
+            recommended_path = []
+            
+            # Simple path generation strategy:
+            # 1. Find prerequisites that the user doesn't know (level < 3)
+            # 2. Find resources for those prerequisites
+            # 3. If no unmet prerequisites, find resources for the target concept itself.
+            
+            # Find unmet prerequisites
+            unmet_prerequisites_query = session.run(
+                f"""
+                MATCH (target:Concept {{name: $target_concept}})<-[:PREREQUISITE_FOR]-(prereq:Concept)
+                WHERE NOT EXISTS {{
+                    MATCH (lp:LearnerProfile {{user_id: $user_id}})-[k:KNOWS_LEVEL]->(prereq)
+                    WHERE k.level >= 3 // User knows it well enough
+                }}
+                RETURN prereq.name AS unmet_prereq_name
+                """,
+                user_id=user_id, target_concept=target_concept
+            )
+            unmet_prerequisites = [r["unmet_prereq_name"] for r in unmet_prerequisites_query]
+            
+            concepts_to_teach = []
+            if unmet_prerequisites:
+                concepts_to_teach = unmet_prerequisites
+                logger.info(f"Unmet prerequisites for {target_concept}: {unmet_prerequisites}")
+            else:
+                # If all prerequisites are met or none exist, suggest resources for the target concept directly
+                concepts_to_teach.append(target_concept)
+                logger.info(f"No unmet prerequisites. Suggesting resources for {target_concept}.")
+
+
+            # Now, find resources that teach these concepts
+            for concept in concepts_to_teach:
+                resources_for_concept_query = session.run(
+                    f"""
+                    MATCH (c:Concept {{name: $concept_name}})<-[:TEACHES]-(r:Resource)
+                    RETURN r.resource_id AS id, r.title AS title, r.url AS url
+                    LIMIT 3 // Limit to a few resources per concept
+                    """,
+                    concept_name=concept
+                )
+                resources_data = [dict(r) for r in resources_for_concept_query]
+                if resources_data:
+                    recommended_path.append({
+                        "concept": concept,
+                        "resources": resources_data
+                    })
+            
+            if not recommended_path:
+                return jsonify({"message": f"No learning path resources found for '{target_concept}' based on your knowledge."}), 200
+
+            return jsonify({
+                "message": f"Personalized learning path for '{target_concept}' generated.",
+                "user_id": user_id,
+                "target_concept": target_concept,
+                "path": recommended_path
+            }), 200
+
+    except Exception as e:
+        logger.error(f"Error generating learning path: {e}")
+        return jsonify({"error": "Failed to generate learning path", "details": str(e)}), 500
+# >>> END NEW ENDPOINT
+
 
 # --- Main Application Entry Point ---
 if __name__ == '__main__':
     with app.app_context():
-        # db.drop_all() # REMOVED THIS LINE - it deletes all data on every run
-        db.create_all() # Creates tables based on your SQLAlchemy models if they don't exist
+        db.create_all()
         logger.info("PostgreSQL tables created/checked.")
     app.run(debug=True, port=5000)
 
