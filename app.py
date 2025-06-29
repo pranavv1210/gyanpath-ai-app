@@ -32,7 +32,8 @@ neo4j_driver = None
 try:
     neo4j_driver = GraphDatabase.driver(
         neo4j_uri,
-        auth=basic_auth(neo4j_username, neo4j_password)
+        auth=basic_auth(neo4j_username, neo4j_password),
+        max_connection_lifetime=60 * 5 # <<< ADD THIS LINE: close connections after 5 minutes of idle
     )
     neo4j_driver.verify_connectivity()
     logger.info("Successfully connected to Neo4j.")
@@ -373,13 +374,11 @@ def update_user_knowledge(user_id):
         logger.error(f"Error updating user knowledge: {e}")
         return jsonify({"error": "Failed to update user knowledge", "details": str(e)}), 500
 
-# <<< NEW ENDPOINT: Generate a basic learning path
 @app.route('/users/<int:user_id>/learning_path', methods=['GET'])
 def generate_learning_path(user_id):
     if not neo4j_driver:
         return jsonify({"error": "Neo4j connection not available"}), 500
     
-    # Get target_concept from query parameters
     target_concept = request.args.get('target_concept')
     if not target_concept:
         return jsonify({"error": "target_concept query parameter is required"}), 400
@@ -391,7 +390,8 @@ def generate_learning_path(user_id):
     try:
         with neo4j_driver.session() as session:
             # Step 1: Ensure target concept exists in KG, if not, create it
-            session.run("MERGE (tc:Concept {name: $target_concept})", target_concept=target_concept)
+            # This is handled by MERGE, but ensure it's valid concept name.
+            # No explicit create here as we assume it will be an existing concept.
 
             # Step 2: Get user's current knowledge (concepts they know and their level)
             user_known_concepts_query = session.run(
@@ -403,7 +403,6 @@ def generate_learning_path(user_id):
             logger.info(f"User {user_id} known concepts: {user_known_concepts}")
 
             # Step 3: Find prerequisite concepts for the target concept that the user doesn't know well
-            # And resources that teach them
             recommended_path = []
             
             # Simple path generation strategy:
@@ -412,9 +411,12 @@ def generate_learning_path(user_id):
             # 3. If no unmet prerequisites, find resources for the target concept itself.
             
             # Find unmet prerequisites
+            # The error suggests the issue is here: the query or data might not align.
+            # Let's ensure a robust way to get prerequisites for target_concept.
             unmet_prerequisites_query = session.run(
                 f"""
-                MATCH (target:Concept {{name: $target_concept}})<-[:PREREQUISITE_FOR]-(prereq:Concept)
+                MATCH (target:Concept {{name: $target_concept}})
+                OPTIONAL MATCH (target)<-[:PREREQUISITE_FOR]-(prereq:Concept)
                 WHERE NOT EXISTS {{
                     MATCH (lp:LearnerProfile {{user_id: $user_id}})-[k:KNOWS_LEVEL]->(prereq)
                     WHERE k.level >= 3 // User knows it well enough
@@ -423,7 +425,8 @@ def generate_learning_path(user_id):
                 """,
                 user_id=user_id, target_concept=target_concept
             )
-            unmet_prerequisites = [r["unmet_prereq_name"] for r in unmet_prerequisites_query]
+            # Filter out None results if OPTIONAL MATCH finds no prerequisites
+            unmet_prerequisites = [r["unmet_prereq_name"] for r in unmet_prerequisites_query if r["unmet_prereq_name"] is not None]
             
             concepts_to_teach = []
             if unmet_prerequisites:
@@ -440,12 +443,19 @@ def generate_learning_path(user_id):
                 resources_for_concept_query = session.run(
                     f"""
                     MATCH (c:Concept {{name: $concept_name}})<-[:TEACHES]-(r:Resource)
-                    RETURN r.resource_id AS id, r.title AS title, r.url AS url
+                    RETURN r.resource_id AS id, r.title AS title, r.url AS url, r.resource_type AS resource_type,
+                           r.source AS source, r.difficulty AS difficulty, r.estimated_time_minutes AS estimated_time_minutes
                     LIMIT 3 // Limit to a few resources per concept
                     """,
                     concept_name=concept
                 )
-                resources_data = [dict(r) for r in resources_for_concept_query]
+                resources_data = []
+                for r in resources_for_concept_query:
+                    resource_dict = dict(r)
+                    # Convert Neo4j resource_id back to int if needed by frontend
+                    resource_dict['id'] = int(resource_dict['id'])
+                    resources_data.append(resource_dict)
+
                 if resources_data:
                     recommended_path.append({
                         "concept": concept,
@@ -453,7 +463,7 @@ def generate_learning_path(user_id):
                     })
             
             if not recommended_path:
-                return jsonify({"message": f"No learning path resources found for '{target_concept}' based on your knowledge."}), 200
+                return jsonify({"message": f"No learning path resources found for '{target_concept}' based on your knowledge or available resources."}), 200
 
             return jsonify({
                 "message": f"Personalized learning path for '{target_concept}' generated.",
@@ -465,7 +475,6 @@ def generate_learning_path(user_id):
     except Exception as e:
         logger.error(f"Error generating learning path: {e}")
         return jsonify({"error": "Failed to generate learning path", "details": str(e)}), 500
-# >>> END NEW ENDPOINT
 
 
 # --- Main Application Entry Point ---
