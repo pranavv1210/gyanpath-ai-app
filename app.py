@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import timedelta
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -7,6 +8,7 @@ from flask_sqlalchemy import SQLAlchemy
 from neo4j import GraphDatabase, basic_auth
 from werkzeug.security import generate_password_hash, check_password_hash
 import spacy
+from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +18,12 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app) # Enable CORS for all routes (important for frontend communication)
+CORS(app)
+
+# --- JWT Configuration ---
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=24)
+jwt = JWTManager(app)
 
 # --- PostgreSQL Configuration ---
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
@@ -33,7 +40,7 @@ try:
     neo4j_driver = GraphDatabase.driver(
         neo4j_uri,
         auth=basic_auth(neo4j_username, neo4j_password),
-        max_connection_lifetime=60 * 5 # <<< ADD THIS LINE: close connections after 5 minutes of idle
+        max_connection_lifetime=60 * 5
     )
     neo4j_driver.verify_connectivity()
     logger.info("Successfully connected to Neo4j.")
@@ -177,11 +184,9 @@ def login_user():
     if user is None or not user.check_password(password):
         return jsonify({"error": "Invalid email or password"}), 401
     
-    return jsonify({
-        "message": "Login successful!",
-        "user_id": user.id,
-        "email": user.email
-    }), 200
+    # FIX: Convert user.id to string for JWT identity
+    access_token = create_access_token(identity=str(user.id)) # <<< MODIFIED LINE
+    return jsonify(access_token=access_token, user_id=user.id, email=user.email), 200
 
 @app.route('/users', methods=['GET'])
 def get_users():
@@ -197,11 +202,12 @@ def add_resource():
     if not all(field in data and data[field] for field in required_fields):
         return jsonify({"error": "Missing required fields: title, url, resource_type"}), 400
 
-    contributed_by_user_id = data.get('contributed_by_user_id')
+    contributed_by_user_id = data.get('contributed_by_user_id') # Will be derived from JWT
     if contributed_by_user_id:
         user_exists = User.query.get(contributed_by_user_id)
         if not user_exists:
             return jsonify({"error": "contributed_by_user_id does not exist"}), 400
+
 
     existing_resource = Resource.query.filter_by(url=data['url']).first()
     if existing_resource:
@@ -326,7 +332,13 @@ def relate_concepts():
         return jsonify({"error": "Failed to create concept relationship", "details": str(e)}), 500
 
 @app.route('/users/<int:user_id>/knowledge', methods=['POST'])
+@jwt_required()
 def update_user_knowledge(user_id):
+    current_user_id = get_jwt_identity()
+    # Fix: Ensure current_user_id is converted to int for comparison
+    if int(current_user_id) != user_id: # <<< MODIFIED LINE
+        return jsonify({"error": "Unauthorized: Cannot update another user's knowledge"}), 403
+
     if not neo4j_driver:
         return jsonify({"error": "Neo4j connection not available"}), 500
 
@@ -375,7 +387,13 @@ def update_user_knowledge(user_id):
         return jsonify({"error": "Failed to update user knowledge", "details": str(e)}), 500
 
 @app.route('/users/<int:user_id>/learning_path', methods=['GET'])
+@jwt_required()
 def generate_learning_path(user_id):
+    current_user_id = get_jwt_identity()
+    # Fix: Ensure current_user_id is converted to int for comparison
+    if int(current_user_id) != user_id: # <<< MODIFIED LINE
+        return jsonify({"error": "Unauthorized: Cannot generate path for another user"}), 403
+
     if not neo4j_driver:
         return jsonify({"error": "Neo4j connection not available"}), 500
     
@@ -389,11 +407,6 @@ def generate_learning_path(user_id):
 
     try:
         with neo4j_driver.session() as session:
-            # Step 1: Ensure target concept exists in KG, if not, create it
-            # This is handled by MERGE, but ensure it's valid concept name.
-            # No explicit create here as we assume it will be an existing concept.
-
-            # Step 2: Get user's current knowledge (concepts they know and their level)
             user_known_concepts_query = session.run(
                 "MATCH (lp:LearnerProfile {user_id: $user_id})-[k:KNOWS_LEVEL]->(c:Concept) "
                 "RETURN c.name AS concept_name, k.level AS level",
@@ -402,30 +415,20 @@ def generate_learning_path(user_id):
             user_known_concepts = {r["concept_name"]: r["level"] for r in user_known_concepts_query}
             logger.info(f"User {user_id} known concepts: {user_known_concepts}")
 
-            # Step 3: Find prerequisite concepts for the target concept that the user doesn't know well
             recommended_path = []
             
-            # Simple path generation strategy:
-            # 1. Find prerequisites that the user doesn't know (level < 3)
-            # 2. Find resources for those prerequisites
-            # 3. If no unmet prerequisites, find resources for the target concept itself.
-            
-            # Find unmet prerequisites
-            # The error suggests the issue is here: the query or data might not align.
-            # Let's ensure a robust way to get prerequisites for target_concept.
             unmet_prerequisites_query = session.run(
                 f"""
                 MATCH (target:Concept {{name: $target_concept}})
                 OPTIONAL MATCH (target)<-[:PREREQUISITE_FOR]-(prereq:Concept)
                 WHERE NOT EXISTS {{
                     MATCH (lp:LearnerProfile {{user_id: $user_id}})-[k:KNOWS_LEVEL]->(prereq)
-                    WHERE k.level >= 3 // User knows it well enough
+                    WHERE k.level >= 3
                 }}
                 RETURN prereq.name AS unmet_prereq_name
                 """,
                 user_id=user_id, target_concept=target_concept
             )
-            # Filter out None results if OPTIONAL MATCH finds no prerequisites
             unmet_prerequisites = [r["unmet_prereq_name"] for r in unmet_prerequisites_query if r["unmet_prereq_name"] is not None]
             
             concepts_to_teach = []
@@ -433,26 +436,23 @@ def generate_learning_path(user_id):
                 concepts_to_teach = unmet_prerequisites
                 logger.info(f"Unmet prerequisites for {target_concept}: {unmet_prerequisites}")
             else:
-                # If all prerequisites are met or none exist, suggest resources for the target concept directly
                 concepts_to_teach.append(target_concept)
                 logger.info(f"No unmet prerequisites. Suggesting resources for {target_concept}.")
 
 
-            # Now, find resources that teach these concepts
             for concept in concepts_to_teach:
                 resources_for_concept_query = session.run(
                     f"""
                     MATCH (c:Concept {{name: $concept_name}})<-[:TEACHES]-(r:Resource)
                     RETURN r.resource_id AS id, r.title AS title, r.url AS url, r.resource_type AS resource_type,
                            r.source AS source, r.difficulty AS difficulty, r.estimated_time_minutes AS estimated_time_minutes
-                    LIMIT 3 // Limit to a few resources per concept
+                    LIMIT 3
                     """,
                     concept_name=concept
                 )
                 resources_data = []
                 for r in resources_for_concept_query:
                     resource_dict = dict(r)
-                    # Convert Neo4j resource_id back to int if needed by frontend
                     resource_dict['id'] = int(resource_dict['id'])
                     resources_data.append(resource_dict)
 
