@@ -10,6 +10,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import spacy
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity
 
+import requests # <<< NEW IMPORT
+from bs4 import BeautifulSoup # <<< NEW IMPORT
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -184,8 +187,7 @@ def login_user():
     if user is None or not user.check_password(password):
         return jsonify({"error": "Invalid email or password"}), 401
     
-    # FIX: Convert user.id to string for JWT identity
-    access_token = create_access_token(identity=str(user.id)) # <<< MODIFIED LINE
+    access_token = create_access_token(identity=str(user.id))
     return jsonify(access_token=access_token, user_id=user.id, email=user.email), 200
 
 @app.route('/users', methods=['GET'])
@@ -202,7 +204,7 @@ def add_resource():
     if not all(field in data and data[field] for field in required_fields):
         return jsonify({"error": "Missing required fields: title, url, resource_type"}), 400
 
-    contributed_by_user_id = data.get('contributed_by_user_id') # Will be derived from JWT
+    contributed_by_user_id = data.get('contributed_by_user_id')
     if contributed_by_user_id:
         user_exists = User.query.get(contributed_by_user_id)
         if not user_exists:
@@ -217,7 +219,7 @@ def add_resource():
         title=data['title'],
         url=data['url'],
         description=data.get('description'),
-        resource_type=data['resource_type'],
+        resource_type=data.get('resource_type', 'article'), # Default to article if not provided
         source=data.get('source'),
         difficulty=data.get('difficulty'),
         estimated_time_minutes=data.get('estimated_time_minutes'),
@@ -335,8 +337,7 @@ def relate_concepts():
 @jwt_required()
 def update_user_knowledge(user_id):
     current_user_id = get_jwt_identity()
-    # Fix: Ensure current_user_id is converted to int for comparison
-    if int(current_user_id) != user_id: # <<< MODIFIED LINE
+    if int(current_user_id) != user_id:
         return jsonify({"error": "Unauthorized: Cannot update another user's knowledge"}), 403
 
     if not neo4j_driver:
@@ -390,8 +391,7 @@ def update_user_knowledge(user_id):
 @jwt_required()
 def generate_learning_path(user_id):
     current_user_id = get_jwt_identity()
-    # Fix: Ensure current_user_id is converted to int for comparison
-    if int(current_user_id) != user_id: # <<< MODIFIED LINE
+    if int(current_user_id) != user_id:
         return jsonify({"error": "Unauthorized: Cannot generate path for another user"}), 403
 
     if not neo4j_driver:
@@ -476,6 +476,94 @@ def generate_learning_path(user_id):
         logger.error(f"Error generating learning path: {e}")
         return jsonify({"error": "Failed to generate learning path", "details": str(e)}), 500
 
+# <<< NEW ENDPOINT: Automated Content Acquisition (Basic)
+@app.route('/fetch_and_add_resource', methods=['POST'])
+@jwt_required() # Protect this endpoint, only authenticated users/admins can trigger it
+def fetch_and_add_resource():
+    data = request.get_json()
+    url_to_fetch = data.get('url')
+    contributed_by_user_id_str = get_jwt_identity() # Get user ID from JWT
+    contributed_by_user_id = int(contributed_by_user_id_str) # Convert to int
+
+    if not url_to_fetch:
+        return jsonify({"error": "URL is required"}), 400
+
+    # Check if resource already exists by URL
+    existing_resource = Resource.query.filter_by(url=url_to_fetch).first()
+    if existing_resource:
+        return jsonify({"message": "Resource with this URL already exists, skipping fetch and re-adding."}), 200 # OK if exists
+
+    # Basic URL validation (more robust validation needed in production)
+    if not (url_to_fetch.startswith('http://') or url_to_fetch.startswith('https://')):
+        return jsonify({"error": "Invalid URL format. Must start with http:// or https://"}), 400
+
+    try:
+        response = requests.get(url_to_fetch, timeout=10) # Add timeout
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract title
+        title = soup.title.string if soup.title else 'No Title Found'
+        
+        # Extract description from meta tag
+        description = ''
+        meta_description = soup.find('meta', attrs={'name': 'description'})
+        if meta_description:
+            description = meta_description.get('content', '')
+        else:
+            # Fallback to first paragraph if no meta description
+            first_p = soup.find('p')
+            if first_p:
+                description = first_p.get_text(strip=True)[:500] # Limit description length
+
+        # Attempt to determine resource type and source
+        resource_type = 'article' # Default
+        source = requests.utils.urlparse(url_to_fetch).hostname # Extract hostname as source
+        if 'youtube.com' in url_to_fetch or 'youtu.be' in url_to_fetch:
+            resource_type = 'video'
+            source = 'YouTube'
+        elif 'github.com' in url_to_fetch:
+            resource_type = 'project'
+            source = 'GitHub'
+        # Add more type/source detection logic as needed
+
+        # Create new resource object
+        new_resource = Resource(
+            title=title if title else url_to_fetch, # Use URL as title if not found
+            url=url_to_fetch,
+            description=description,
+            resource_type=resource_type,
+            source=source,
+            difficulty='unknown', # Default, AI will later determine this
+            estimated_time_minutes=0, # Default, AI will later estimate this
+            contributed_by_user_id=contributed_by_user_id # Link to the user who triggered this
+        )
+
+        db.session.add(new_resource)
+        db.session.commit()
+
+        # Process for Knowledge Graph after saving to PG
+        if nlp and neo4j_driver:
+            process_resource_for_kg(new_resource.id, new_resource.title, new_resource.description, new_resource.url)
+        else:
+            logger.warning(f"Skipping KG processing for auto-fetched resource {new_resource.id} due to missing NLP or Neo4j connection.")
+
+        return jsonify({
+            "message": "Resource fetched and added successfully!",
+            "resource_id": new_resource.id,
+            "title": new_resource.title,
+            "url": new_resource.url
+        }), 201
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"HTTP/Network error fetching resource {url_to_fetch}: {e}")
+        return jsonify({"error": f"Failed to fetch URL: {e}"}), 400
+    except Exception as e:
+        db.session.rollback() # Ensure rollback if DB operation fails after fetch
+        logger.error(f"Unexpected error adding fetched resource {url_to_fetch}: {e}")
+        return jsonify({"error": "An unexpected error occurred while adding the resource.", "details": str(e)}), 500
+# >>> END NEW ENDPOINT
 
 # --- Main Application Entry Point ---
 if __name__ == '__main__':

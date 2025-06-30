@@ -40,3 +40,293 @@
 .read-the-docs {
   color: #888;
 }
+/* Global variables for consistent styling */
+:root {
+  --sb-primary-color: #16a472; /* SkillBridge Green */
+  --sb-primary-dark: #128c62; /* Slightly darker for hover/active */
+  --sb-accent-blue: #007bff; /* For non-primary actions/links */
+  --sb-accent-red: #dc3545; /* For danger/logout */
+  --sb-bg-light: #f8f9fa; /* Light background for sections */
+  --sb-text-dark: #343a40; /* Dark text */
+  --sb-text-light: #ffffff; /* Light text */
+
+  /* NEW: Font variables */
+  --font-barlow-condensed: 'Barlow Condensed', sans-serif;
+  --font-lato: 'Lato', sans-serif; /* Our Akzidenz-Grotesk alternative */
+  --font-crimson-text: 'Crimson Text', serif;
+}
+
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0; /* Remove root padding to let login page be full width */
+  text-align: center;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: var(--font-lato); /* Default body font */
+  color: var(--sb-text-dark); /* Default text color */
+  background-color: var(--sb-bg-light); /* Default app background */
+}
+
+.App {
+  width: 100%;
+  box-sizing: border-box; /* Ensure padding doesn't increase total width */
+  padding: 20px; /* Default padding for the main app content */
+}
+
+/* Header styling */
+.App-header {
+  background-color: var(--sb-text-light); /* White background for header */
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 30px; /* Space below header */
+  position: relative; /* For absolute positioning of logout button */
+}
+
+.App-header h1 {
+  font-size: 2.5em; /* Slightly larger for main title */
+  color: var(--sb-primary-color);
+  margin: 0;
+  font-family: var(--font-barlow-condensed); /* SkillBridge brand font */
+  font-weight: 700; /* Bold for headings */
+  letter-spacing: 1.5px;
+}
+
+.App-header p {
+  color: var(--sb-text-dark);
+}
+
+/* General button styling */
+button {
+  padding: 10px 20px;
+  font-size: 1em;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, opacity 0.3s ease;
+  font-weight: bold; /* Make buttons bolder */
+}
+
+button:hover:not(:disabled) {
+  opacity: 0.9;
+  background-color: var(--sb-primary-dark); /* Darken on hover */
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Default button colors */
+button {
+  background-color: var(--sb-primary-color);
+  color: var(--sb-text-light);
+}
+
+/* Input fields */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+select {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1em;
+  width: 100%;
+  box-sizing: border-box; /* Include padding in width */
+  font-family: var(--font-lato); /* Consistent input font */
+}
+
+/* Sections */
+section {
+  background-color: var(--sb-text-light); /* White background for sections */
+  border: 1px solid #ddd;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  text-align: left; /* Align text left within sections */
+}
+
+section h2 {
+  color: var(--sb-primary-color);
+  margin-top: 0;
+  font-size: 1.8em;
+  border-bottom: 2px solid var(--sb-primary-color);
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+  font-family: var(--font-lato); /* Section headings use Lato */
+}
+
+.resources-list .resource-card {
+  border: 1px solid var(--sb-primary-color);
+  background-color: var(--sb-bg-light);
+  padding: 15px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.resources-list .resource-card h3 {
+  color: var(--sb-text-dark);
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 1.3em;
+  font-family: var(--font-lato); /* Resource titles use Lato */
+}
+
+.resources-list .resource-card a {
+  color: var(--sb-primary-color);
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.resources-list .resource-card a:hover {
+  text-decoration: underline;
+}
+
+.path-step-card {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: var(--sb-bg-light);
+    border-left: 5px solid var(--sb-primary-color);
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.path-step-card h4 {
+    color: var(--sb-text-dark);
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.2em;
+    font-family: var(--font-lato);
+}
+
+.path-step-card ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.path-step-card li {
+    margin-bottom: 8px;
+}
+
+/* Specific styles for the login page conditional rendering */
+.App.login-page {
+  min-height: 100vh;
+  min-width: 100vw;
+  display: flex;
+  position: fixed; /* Use fixed to cover full viewport */
+  top: 0;
+  left: 0;
+  padding: 0;
+  margin: 0;
+  background-color: var(--sb-primary-color);
+  justify-content: center;
+  align-items: center;
+  flex-direction: row; /* Default for desktop */
+}
+
+.login-panel-left {
+  background-color: var(--sb-primary-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--sb-text-light);
+  width: 50%;
+  height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.login-panel-left img {
+  height: 120px; /* Adjust as needed */
+  margin-bottom: 20px;
+}
+
+.login-panel-left h1 {
+  font-size: 3em;
+  margin: 0;
+  color: var(--sb-text-light);
+  font-family: var(--font-barlow-condensed);
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.login-panel-left p {
+  font-size: 1.5em;
+  margin: 10px 0;
+  font-family: var(--font-lato); /* Personalized Learning Navigator font */
+}
+
+.login-panel-right {
+  background-color: var(--sb-text-light);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 50%;
+  height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+  box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+}
+
+.login-panel-right h2 {
+  font-size: 2em;
+  margin-bottom: 30px;
+  color: var(--sb-text-dark);
+  font-family: var(--font-crimson-text); /* Login/Sign Up font */
+  font-weight: 700;
+}
+
+.login-panel-right input,
+.login-panel-right button {
+  width: 100%;
+  max-width: 350px;
+}
+
+.login-panel-right .social-login button {
+    background-color: #db4437; /* Google Red */
+}
+
+.login-panel-right .social-login button:last-child {
+    background-color: #333; /* Github Dark */
+}
+
+/* Media queries for smaller screens (Mobile Responsiveness) */
+@media (max-width: 768px) {
+  .App.login-page {
+    flex-direction: column; /* Stack panels vertically */
+    position: relative; /* Allow scrolling if content overflows */
+    min-height: auto;
+  }
+
+  .login-panel-left,
+  .login-panel-right {
+    width: 100%; /* Take full width */
+    height: 50vh; /* Each panel takes half height */
+    box-shadow: none; /* Remove shadow for mobile */
+  }
+
+  .login-panel-left h1 {
+    font-size: 2.5em;
+  }
+
+  .login-panel-left p {
+    font-size: 1.2em;
+  }
+
+  .login-panel-right h2 {
+    margin-bottom: 20px;
+  }
+}
