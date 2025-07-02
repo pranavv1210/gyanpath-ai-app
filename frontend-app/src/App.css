@@ -46,77 +46,196 @@
   --sb-primary-dark: #128c62; /* Slightly darker for hover/active */
   --sb-accent-blue: #007bff; /* For non-primary actions/links */
   --sb-accent-red: #dc3545; /* For danger/logout */
-  --sb-bg-light: #f8f9fa; /* Light background for sections */
+  --sb-bg-light: #f8f9fa; /* Light background for general sections */
+  --sb-card-bg: #e0f2f1; /* Light green/teal background for cards */
   --sb-text-dark: #343a40; /* Dark text */
   --sb-text-light: #ffffff; /* Light text */
 
-  /* NEW: Font variables */
+  /* Font variables */
   --font-barlow-condensed: 'Barlow Condensed', sans-serif;
-  --font-lato: 'Lato', sans-serif; /* Our Akzidenz-Grotesk alternative */
+  --font-lato: 'Lato', sans-serif;
   --font-crimson-text: 'Crimson Text', serif;
 }
 
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 0; /* Remove root padding to let login page be full width */
-  text-align: center;
+/* Ensure HTML, Body, and Root take full viewport dimensions */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* Prevent horizontal scroll */
 }
 
 body {
-  margin: 0;
   display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
-  font-family: var(--font-lato); /* Default body font */
-  color: var(--sb-text-dark); /* Default text color */
-  background-color: var(--sb-bg-light); /* Default app background */
+  font-family: var(--font-lato);
+  color: var(--sb-text-dark);
+  background-color: var(--sb-bg-light); /* Fallback */
+
+  /* Background Image */
+  background-image: url('/background-library.jpg'); /* Adjust filename if different */
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 }
 
 .App {
   width: 100%;
-  box-sizing: border-box; /* Ensure padding doesn't increase total width */
-  padding: 20px; /* Default padding for the main app content */
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 0; /* Remove padding from App wrapper */
+  display: flex;
+  flex-direction: column;
 }
 
-/* Header styling */
-.App-header {
-  background-color: var(--sb-text-light); /* White background for header */
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  margin-bottom: 30px; /* Space below header */
-  position: relative; /* For absolute positioning of logout button */
+/* --- App Header (Top Navigation Bar) --- */
+.app-main-header {
+  background-color: var(--sb-primary-color);
+  color: var(--sb-text-light);
+  padding: 15px 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  width: 100%;
+  box-sizing: border-box;
+  z-index: 1000;
 }
 
-.App-header h1 {
-  font-size: 2.5em; /* Slightly larger for main title */
-  color: var(--sb-primary-color);
+.app-main-header .header-left,
+.app-main-header .header-center,
+.app-main-header .header-right {
+  display: flex;
+  align-items: center;
+}
+
+.app-main-header .header-left {
+  gap: 15px;
+  flex: 1;
+  justify-content: flex-start;
+}
+
+.app-main-header .header-center {
+  flex: 2;
+  justify-content: center;
+  text-align: center;
+}
+
+.app-main-header h1 {
+  font-family: var(--font-barlow-condensed);
+  font-size: 1.8em;
+  font-weight: 700;
   margin: 0;
-  font-family: var(--font-barlow-condensed); /* SkillBridge brand font */
-  font-weight: 700; /* Bold for headings */
-  letter-spacing: 1.5px;
+  color: var(--sb-text-light);
 }
 
-.App-header p {
-  color: var(--sb-text-dark);
+.app-main-header .header-logo {
+  height: 40px;
+  filter: brightness(0) invert(1);
+  margin-right: 10px; /* Space between logo and text if re-added later */
 }
 
-/* General button styling */
-button {
-  padding: 10px 20px;
-  font-size: 1em;
-  border: none;
-  border-radius: 5px;
+.app-main-header .hamburger-icon {
+  font-size: 1.8em;
   cursor: pointer;
-  transition: background-color 0.3s ease, opacity 0.3s ease;
-  font-weight: bold; /* Make buttons bolder */
+  margin-right: 15px; /* Space from logo/text */
+}
+
+.app-main-header .profile-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.app-main-header .profile-info p {
+  margin: 0;
+  font-size: 1em;
+}
+
+.app-main-header .profile-icon {
+  font-size: 2em;
+  border: 1px solid var(--sb-text-light);
+  border-radius: 50%;
+  padding: 2px;
+}
+
+/* --- Main Content Area (after header) --- */
+.main-app-content {
+  flex-grow: 1;
+  padding: 30px 20px; /* Vertical padding 30px, horizontal padding 20px */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  width: 100%; /* Take full width */
+  box-sizing: border-box;
+}
+
+/* --- Content Cards (Assess Knowledge, Generate Path) --- */
+.content-card {
+  background-color: var(--sb-card-bg);
+  border-radius: 20px;
+  padding: 30px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+  width: 100%;
+  max-width: 700px; /* Content cards remain centered within their max-width */
+  text-align: left;
+  border: none;
+  box-sizing: border-box;
+}
+
+.content-card h2 {
+  color: var(--sb-primary-dark);
+  font-size: 2em;
+  font-family: var(--font-lato);
+  border-bottom: 2px solid var(--sb-primary-dark);
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+/* Input field styles within cards */
+.content-card input[type="text"],
+.content-card select {
+  padding: 12px 15px;
+  border: 1px solid var(--sb-primary-color);
+  border-radius: 8px;
+  font-size: 1.1em;
+  width: calc(100% - 30px); /* Adjust for padding */
+  margin-bottom: 15px;
+  box-sizing: border-box;
+}
+
+.content-card select {
+  height: 45px;
+}
+
+
+/* Button styles within cards */
+.content-card button {
+  padding: 15px 30px;
+  font-size: 1.1em;
+  background-color: var(--sb-primary-color);
+  color: var(--sb-text-light);
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.content-card button:hover:not(:disabled) {
+  background-color: var(--sb-primary-dark);
+}
+
+/* General button styling (inherited by login buttons unless overridden) */
+button {
+  transition: background-color 0.3s ease;
 }
 
 button:hover:not(:disabled) {
   opacity: 0.9;
-  background-color: var(--sb-primary-dark); /* Darken on hover */
 }
 
 button:disabled {
@@ -124,66 +243,24 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* Default button colors */
-button {
-  background-color: var(--sb-primary-color);
-  color: var(--sb-text-light);
-}
-
-/* Input fields */
-input[type="text"],
-input[type="email"],
-input[type="password"],
-select {
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 1em;
-  width: 100%;
-  box-sizing: border-box; /* Include padding in width */
-  font-family: var(--font-lato); /* Consistent input font */
-}
-
-/* Sections */
-section {
-  background-color: var(--sb-text-light); /* White background for sections */
-  border: 1px solid #ddd;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 30px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  text-align: left; /* Align text left within sections */
-}
-
-section h2 {
-  color: var(--sb-primary-color);
-  margin-top: 0;
-  font-size: 1.8em;
-  border-bottom: 2px solid var(--sb-primary-color);
-  padding-bottom: 10px;
-  margin-bottom: 20px;
-  font-family: var(--font-lato); /* Section headings use Lato */
-}
-
+/* Resources List (if still shown) */
 .resources-list .resource-card {
   border: 1px solid var(--sb-primary-color);
-  background-color: var(--sb-bg-light);
+  background-color: var(--sb-text-light);
   padding: 15px;
-  border-radius: 5px;
+  border-radius: 8px;
   margin-bottom: 15px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.08);
 }
 
 .resources-list .resource-card h3 {
-  color: var(--sb-text-dark);
-  margin-top: 0;
-  margin-bottom: 10px;
+  color: var(--sb-primary-dark);
   font-size: 1.3em;
-  font-family: var(--font-lato); /* Resource titles use Lato */
+  font-family: var(--font-lato);
 }
 
 .resources-list .resource-card a {
-  color: var(--sb-primary-color);
+  color: var(--sb-accent-blue);
   text-decoration: none;
   font-weight: bold;
 }
@@ -218,12 +295,12 @@ section h2 {
     margin-bottom: 8px;
 }
 
-/* Specific styles for the login page conditional rendering */
+/* --- Login Page Styles (unchanged from previous step, but included for completeness) --- */
 .App.login-page {
   min-height: 100vh;
   min-width: 100vw;
   display: flex;
-  position: fixed; /* Use fixed to cover full viewport */
+  position: fixed;
   top: 0;
   left: 0;
   padding: 0;
@@ -231,7 +308,7 @@ section h2 {
   background-color: var(--sb-primary-color);
   justify-content: center;
   align-items: center;
-  flex-direction: row; /* Default for desktop */
+  flex-direction: row;
 }
 
 .login-panel-left {
@@ -249,7 +326,7 @@ section h2 {
 }
 
 .login-panel-left img {
-  height: 120px; /* Adjust as needed */
+  height: 120px;
   margin-bottom: 20px;
 }
 
@@ -265,7 +342,7 @@ section h2 {
 .login-panel-left p {
   font-size: 1.5em;
   margin: 10px 0;
-  font-family: var(--font-lato); /* Personalized Learning Navigator font */
+  font-family: var(--font-lato);
 }
 
 .login-panel-right {
@@ -278,44 +355,54 @@ section h2 {
   height: 100vh;
   padding: 20px;
   box-sizing: border-box;
-  box-shadow: -5px 0 15px rgba(0,0,0,0.1);
 }
 
-.login-panel-right h2 {
+.login-form-container {
+  background-color: var(--sb-text-light);
+  border: 1px solid #e0e0e0;
+  border-radius: 15px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  padding: 40px;
+  width: 80%;
+  max-width: 450px;
+  box-sizing: border-box;
+}
+
+.login-form-container h2 {
+  font-family: var(--font-crimson-text);
   font-size: 2em;
+  margin-top: 0;
   margin-bottom: 30px;
   color: var(--sb-text-dark);
-  font-family: var(--font-crimson-text); /* Login/Sign Up font */
-  font-weight: 700;
 }
 
-.login-panel-right input,
-.login-panel-right button {
+.login-form-container input,
+.login-form-container button {
   width: 100%;
-  max-width: 350px;
+  max-width: none;
 }
 
-.login-panel-right .social-login button {
-    background-color: #db4437; /* Google Red */
+.login-form-container .social-login button {
+    background-color: #db4437;
 }
 
-.login-panel-right .social-login button:last-child {
-    background-color: #333; /* Github Dark */
+.login-form-container .social-login button:last-child {
+    background-color: #333;
 }
 
 /* Media queries for smaller screens (Mobile Responsiveness) */
 @media (max-width: 768px) {
   .App.login-page {
-    flex-direction: column; /* Stack panels vertically */
-    position: relative; /* Allow scrolling if content overflows */
+    flex-direction: column;
+    position: relative;
     min-height: auto;
   }
 
   .login-panel-left,
   .login-panel-right {
-    width: 100%; /* Take full width */
-    height: 50vh; /* Each panel takes half height */
-    box-shadow: none; /* Remove shadow for mobile */
+    width: 100%;
+    height: 50vh;
+    box-shadow: none;
   }
 
   .login-panel-left h1 {
