@@ -11,6 +11,14 @@ function App() {
   const [loginMessage, setLoginMessage] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
 
+  // NEW STATE FOR SIGNUP
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
+  const [signupMessage, setSignupMessage] = useState("");
+  const [signupLoading, setSignupLoading] = useState(false);
+
   // Main App Content State
   const [error, setError] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -20,13 +28,11 @@ function App() {
   const [targetConcept, setTargetConcept] = useState("");
   const [learningPath, setLearningPath] = useState(null);
   const [pathLoading, setPathLoading] = useState(false);
-  const [pathMessage, setPathMessage] = useState("");
+  const [pathMessage, setPathLoadingMessage] = useState("");
 
   // Knowledge Assessment State
   const [knowledgeConcept, setKnowledgeConcept] = useState("");
-  // MODIFIED: Initial state for knowledgeLevel to empty string for placeholder
-  const [knowledgeLevel, setKnowledgeLevel] = useState(""); 
-
+  const [knowledgeLevel, setKnowledgeLevel] = useState(""); // Default to empty string for placeholder
   const [knowledgeUpdateMessage, setKnowledgeUpdateMessage] = useState("");
   const [knowledgeUpdateLoading, setKnowledgeUpdateLoading] = useState(false);
 
@@ -44,6 +50,19 @@ function App() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileRef = useRef();
 
+  // Profile Settings State
+  const [currentEmailDisplay, setCurrentEmailDisplay] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [profileMessage, setProfileMessage] = useState('');
+  const [profileLoading, setProfileLoading] = useState(false);
+
+  // App Settings (Dark Mode) State
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const savedMode = localStorage.getItem('darkMode');
+    return savedMode ? JSON.parse(savedMode) : false;
+  });
 
   useEffect(() => {
     // Check for existing token in localStorage on component mount
@@ -78,6 +97,43 @@ function App() {
         });
     }
   }, [currentPage, isLoggedIn]);
+
+  // Effect to apply dark mode class to HTML element
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark-mode');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+    }
+    localStorage.setItem('darkMode', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
+
+  // Effect to fetch user profile data when profileSettings page is active
+  useEffect(() => {
+    if (currentPage === 'profileSettings' && isLoggedIn && currentUser?.id && accessToken) {
+      setProfileLoading(true);
+      setProfileMessage('');
+      fetch(`http://localhost:5000/users/${currentUser.id}/profile`, {
+        headers: getAuthHeaders()
+      })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(err => { throw new Error(err.error || 'Failed to fetch profile'); });
+        }
+        return response.json();
+      })
+      .then(data => {
+        setCurrentEmailDisplay(data.email);
+      })
+      .catch(error => {
+        console.error("Error fetching profile data:", error);
+        setProfileMessage(`Error loading profile: ${error.message}`);
+      })
+      .finally(() => {
+        setProfileLoading(false);
+      });
+    }
+  }, [currentPage, isLoggedIn, currentUser?.id, accessToken]);
 
 
   // Click outside to close profile menu
@@ -139,6 +195,7 @@ function App() {
         setLoginEmail("");
         setLoginPassword("");
         setCurrentPage('dashboard');
+        setIsSigningUp(false);
       })
       .catch(error => {
         console.error("Login Error:", error);
@@ -165,7 +222,7 @@ function App() {
     setKnowledgeUpdateMessage("");
     setTargetConcept("");
     setKnowledgeConcept("");
-    setKnowledgeLevel(""); // Reset to empty string
+    setKnowledgeLevel("");
     setSidebarOpen(false);
     setProfileMenuOpen(false);
     setCurrentPage('dashboard');
@@ -216,7 +273,6 @@ function App() {
       alert("Please log in to update knowledge.");
       return;
     }
-    // MODIFIED: Check for empty string or 0 (if user manually types 0)
     if (!knowledgeConcept || knowledgeLevel === "" || isNaN(knowledgeLevel)) {
       alert("Please enter a concept and select a valid level!");
       return;
@@ -228,7 +284,7 @@ function App() {
     fetch(`http://localhost:5000/users/${currentUser.id}/knowledge`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ concept_name: knowledgeConcept, level: parseInt(knowledgeLevel) }), // Ensure level is integer
+      body: JSON.stringify({ concept_name: knowledgeConcept, level: parseInt(knowledgeLevel) }),
     })
       .then(response => {
         if (!response.ok) {
@@ -311,6 +367,54 @@ function App() {
     setProfileMenuOpen(prev => !prev);
   };
 
+  // Dark Mode Toggle Function
+  const toggleDarkMode = () => {
+    setIsDarkMode(prevMode => !prevMode);
+  };
+
+  // Handle Signup Function
+  const handleSignUp = () => {
+    if (!signupEmail || !signupPassword || !signupConfirmPassword) {
+      setSignupMessage("All fields are required.");
+      return;
+    }
+    if (signupPassword !== signupConfirmPassword) {
+      setSignupMessage("Passwords do not match.");
+      return;
+    }
+    setSignupLoading(true);
+    setSignupMessage("");
+    setError(null);
+
+    fetch('http://localhost:5000/create_user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: signupEmail, password: signupPassword }),
+    })
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(err => { throw new Error(err.error || 'Signup failed'); });
+        }
+        return response.json();
+      })
+      .then(data => {
+        setSignupMessage(`Signup successful! You can now login. User ID: ${data.user_id}`);
+        setSignupEmail("");
+        setSignupPassword("");
+        setSignupConfirmPassword("");
+        setIsSigningUp(false);
+      })
+      .catch(error => {
+        console.error("Signup Error:", error);
+        setSignupMessage(`Signup failed: ${error.message}`);
+      })
+      .finally(() => {
+        setSignupLoading(false);
+      });
+  };
+
   // Content Renderers for different pages
   const renderContent = () => {
     switch (currentPage) {
@@ -338,9 +442,9 @@ function App() {
                 <select
                   id="knowledgeLevelSelect"
                   value={knowledgeLevel}
-                  onChange={(e) => setKnowledgeLevel(e.target.value)} // Don't parse until validation
+                  onChange={(e) => setKnowledgeLevel(e.target.value)}
                 >
-                  <option value="">-- Select Level --</option> {/* NEW PLACEHOLDER */}
+                  <option value="">-- Select Level --</option>
                   <option value="1">1(Novice)</option>
                   <option value="2">2(Familiar)</option>
                   <option value="3">3 (Competent)</option>
@@ -458,6 +562,82 @@ function App() {
             {contributeMessage && <p style={{ marginTop: '10px', color: contributeMessage.startsWith('Error') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)' }}>{contributeMessage}</p>}
           </section>
         );
+      case 'profileSettings':
+        return (
+          <section className="content-card">
+            <h2>Profile Settings</h2>
+            {profileLoading && <p>Loading profile...</p>}
+            {profileMessage && <p style={{ color: profileMessage.startsWith('Error') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)' }}>{profileMessage}</p>}
+            
+            {currentUser && !profileLoading && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Account Information */}
+                <div>
+                  <h3>Account Information</h3>
+                  <p><strong>Email:</strong> {currentEmailDisplay}</p>
+                  
+                  <h4>Change Password</h4>
+                  <div style={{ marginBottom: '15px' }}>
+                    <label htmlFor="oldPasswordInput" style={{ display: 'block', marginBottom: '5px' }}>Old Password:</label>
+                    <input
+                      id="oldPasswordInput"
+                      type="password"
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      placeholder="Enter old password"
+                    />
+                  </div>
+                  <div style={{ marginBottom: '15px' }}>
+                    <label htmlFor="newPasswordInput" style={{ display: 'block', marginBottom: '5px' }}>New Password:</label>
+                    <input
+                      id="newPasswordInput"
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password"
+                    />
+                  </div>
+                  <div style={{ marginBottom: '15px' }}>
+                    <label htmlFor="confirmNewPasswordInput" style={{ display: 'block', marginBottom: '5px' }}>Confirm New Password:</label>
+                    <input
+                      id="confirmNewPasswordInput"
+                      type="password"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Confirm new password"
+                    />
+                  </div>
+                  <button onClick={() => alert("Password change functionality coming soon!")}>Change Password</button>
+                </div>
+
+                <hr/>
+              </div>
+            )}
+          </section>
+        );
+      case 'appSettings':
+        return (
+          <section className="content-card">
+            <h2>App Settings</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Dark Mode Toggle */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2em', color: 'var(--sb-text-dark)' }}>Dark Mode</h3>
+                    <label className="switch">
+                        <input 
+                            type="checkbox" 
+                            checked={isDarkMode} 
+                            onChange={toggleDarkMode} 
+                        />
+                        <span className="slider round"></span>
+                    </label>
+                </div>
+
+                {/* Other settings can go here */}
+                <p style={{color: '#666'}}>More app settings coming soon!</p>
+            </div>
+          </section>
+        );
       default:
         return <section className="content-card"><h2>Page Not Found</h2></section>;
     }
@@ -470,8 +650,8 @@ function App() {
       <div className="App login-page">
         {/* Left Green Panel */}
         <div className="login-panel-left">
-            <img src="/favicon.png" alt="SkillBridge Logo" />
-            <h1>SKILLBRIDGE</h1>
+            <img src="/favicon.png" alt="GyanPath.ai Logo" />
+            <h1>GYANPATH.AI</h1>
             <p>Personalized Learning Navigator</p>
         </div>
 
@@ -502,7 +682,7 @@ function App() {
                     {loginMessage && <p style={{ color: loginMessage.includes('failed') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)', fontSize: '0.9em', textAlign: 'center' }}>{loginMessage}</p>}
                     
                     <p style={{ fontSize: '1em', textAlign: 'center', marginTop: '10px' }}>
-                        Create new account, <a href="#" onClick={() => alert("Sign Up functionality coming soon! Please use Postman to create an account for now.")} style={{ color: 'var(--sb-accent-blue)', textDecoration: 'none', fontWeight: 'bold' }}>Sign Up</a>
+                        Create new account, <a href="#" onClick={() => setIsSigningUp(true)} style={{ color: 'var(--sb-accent-blue)', textDecoration: 'none', fontWeight: 'bold' }}>Sign Up</a>
                     </p>
 
                     {/* Social Login Buttons (Placeholders for now) */}
@@ -531,7 +711,7 @@ function App() {
           <span className="hamburger-icon" onClick={openSidebar}>&#9776;</span> {/* Hamburger Menu Icon */}
         </div>
         <div className="header-center">
-            <h1>SKILLBRIDGE: Personalized Learning Navigator</h1>
+            <h1>GYANPATH.AI: Personalized Learning Navigator</h1>
         </div>
         <div className="header-right">
           <div className="profile-info" ref={profileRef}>
@@ -540,8 +720,8 @@ function App() {
             
             {profileMenuOpen && ( // Render dropdown if open
               <div className="profile-dropdown">
-                <a href="#" onClick={() => { alert("Profile Settings coming soon!"); setProfileMenuOpen(false); }}>Profile Settings</a>
-                <a href="#" onClick={() => { alert("App Settings coming soon!"); setProfileMenuOpen(false); }}>Settings</a>
+                <a href="#" onClick={() => { setCurrentPage('profileSettings'); setProfileMenuOpen(false); }}>Profile Settings</a>
+                <a href="#" onClick={() => { setCurrentPage('appSettings'); setProfileMenuOpen(false); }}>Settings</a>
                 <hr/>
                 <a href="#" onClick={() => { handleLogout(); setProfileMenuOpen(false); }}>Logout</a>
               </div>

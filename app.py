@@ -1,17 +1,23 @@
 import os
 import logging
-from datetime import timedelta
+import json # <<< NEW: For handling JSON strings in DB
+from datetime import timedelta, datetime # <<< NEW: For OTP expiration
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from neo4j import GraphDatabase, basic_auth
 from werkzeug.security import generate_password_hash, check_password_hash
 import spacy
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity
+import requests
+from bs4 import BeautifulSoup
 
-import requests # <<< NEW IMPORT
-from bs4 import BeautifulSoup # <<< NEW IMPORT
+# For OTP generation
+import random # <<< NEW
+import string # <<< NEW
+
+# For sending emails
+from flask_mail import Mail, Message # <<< NEW
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +27,30 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 app = Flask(__name__)
+
+# --- Flask-Mail Configuration for sending emails ---
+# You will need to set these environment variables in your .env file
+# Example for Gmail (less secure app access must be on, or use app password):
+# MAIL_SERVER='smtp.gmail.com'
+# MAIL_PORT=587
+# MAIL_USE_TLS=True
+# MAIL_USERNAME='your_email@gmail.com'
+# MAIL_PASSWORD='your_email_app_password'
+# MAIL_DEFAULT_SENDER='your_email@gmail.com'
+# Or for other services like SendGrid (use their SMTP details and API Key as password)
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True').lower() in ['true', '1', 't']
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
+
+mail = Mail(app) # <<< NEW: Initialize Flask-Mail
+
+# --- CORS Configuration ---
+from flask_cors import CORS # This was missing in your last app.py
 CORS(app)
+
 
 # --- JWT Configuration ---
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
@@ -61,8 +90,13 @@ except Exception as e:
 # --- Define Your Database Models (PostgreSQL) ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    first_name = db.Column(db.String(100), nullable=True) # <<< NEW
+    last_name = db.Column(db.String(100), nullable=True) # <<< NEW
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    preferred_content_types = db.Column(db.String(255), default='["article", "video"]') # Stored as JSON string
+    time_availability = db.Column(db.String(50), default='1_hour_day')
+    difficulty_preference = db.Column(db.String(50), default='beginner')
 
     def __repr__(self):
         return f'<User {self.email}>'
@@ -72,6 +106,18 @@ class User(db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+# <<< NEW: OTP Model for temporary storage
+class OTP(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False) # One OTP per email at a time
+    code = db.Column(db.String(6), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+    def __repr__(self):
+        return f'<OTP for {self.email}>'
+# >>> END NEW OTP MODEL
+
 
 class Resource(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -145,33 +191,57 @@ def process_resource_for_kg(resource_id, title, description, url):
 
 @app.route('/')
 def hello_world():
-    return jsonify(message="Welcome to SkillBridge Backend!")
+    return jsonify(message="Welcome to GyanPath.ai Backend!") # <<< RENAMED
 
 @app.route('/test-ai')
 def test_ai():
     return jsonify(message="AI functionality placeholder - ready to integrate!")
 
+# <<< MODIFIED: create_user now expects OTP to be pre-verified
 @app.route('/create_user', methods=['POST'])
 def create_user():
     data = request.get_json()
-    if not data or not 'email' in data or not 'password' in data:
-        return jsonify({"error": "Email and password are required"}), 400
+    required_fields = ['first_name', 'last_name', 'email', 'password']
+    if not all(field in data and data[field] for field in required_fields):
+        return jsonify({"error": "Missing required fields: first_name, last_name, email, password"}), 400
 
-    existing_user = User.query.filter_by(email=data['email']).first()
+    # Ensure email is lowercase for uniqueness check
+    email = data['email'].lower()
+
+    # Check if user already exists
+    existing_user = User.query.filter_by(email=email).first()
     if existing_user:
-        return jsonify({"error": "User with this email already exists"}), 409
+        return jsonify({"error": "User with this email already exists"}), 409 # 409 Conflict
+    
+    # Check if OTP is verified for this email
+    # For now, let's assume OTP verification would happen in a preceding step
+    # and a flag or temporary store would confirm this email is ready for registration.
+    # We'll build the OTP verification steps next.
+    # For initial testing, we'll bypass OTP check for now, but will add it back.
+    # This endpoint will eventually ONLY be called AFTER OTP is verified.
 
-    new_user = User(email=data['email'])
+    new_user = User(
+        first_name=data['first_name'], # <<< NEW
+        last_name=data['last_name'],   # <<< NEW
+        email=email
+    )
     new_user.set_password(data['password'])
+    
+    # Set default preferences for new user
+    new_user.preferred_content_types = json.dumps(["article", "video"]) # Ensure it's a JSON string
+    new_user.time_availability = '1_hour_day'
+    new_user.difficulty_preference = 'beginner'
 
     try:
         db.session.add(new_user)
         db.session.commit()
-        return jsonify({"message": f"User {new_user.email} created successfully with ID {new_user.id}"}), 201
+        return jsonify({"message": f"User {new_user.first_name} {new_user.last_name} ({new_user.email}) created successfully with ID {new_user.id}"}), 201
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error creating user: {e}")
         return jsonify({"error": "Failed to create user", "details": str(e)}), 500
+# >>> END MODIFIED create_user
+
 
 @app.route('/login', methods=['POST'])
 def login_user():
@@ -181,6 +251,9 @@ def login_user():
 
     if not email or not password:
         return jsonify({"error": "Email and password are required"}), 400
+    
+    # Ensure email is lowercase for lookup
+    email = email.lower()
 
     user = User.query.filter_by(email=email).first()
 
@@ -190,10 +263,181 @@ def login_user():
     access_token = create_access_token(identity=str(user.id))
     return jsonify(access_token=access_token, user_id=user.id, email=user.email), 200
 
+# <<< NEW: Get User Profile (including preferences)
+@app.route('/users/<int:user_id>/profile', methods=['GET'])
+@jwt_required()
+def get_user_profile(user_id):
+    current_user_id = get_jwt_identity()
+    if int(current_user_id) != user_id:
+        return jsonify({"error": "Unauthorized: Cannot view another user's profile"}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    return jsonify({
+        "id": user.id,
+        "first_name": user.first_name, # <<< NEW
+        "last_name": user.last_name,   # <<< NEW
+        "email": user.email,
+        "preferred_content_types": user.preferred_content_types,
+        "time_availability": user.time_availability,
+        "difficulty_preference": user.difficulty_preference
+    }), 200
+# >>> END NEW
+
+
+# <<< NEW: Update User Profile (for preferences and possibly name)
+@app.route('/users/<int:user_id>/profile', methods=['PUT'])
+@jwt_required()
+def update_user_profile(user_id):
+    current_user_id = get_jwt_identity()
+    if int(current_user_id) != user_id:
+        return jsonify({"error": "Unauthorized: Cannot update another user's profile"}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    data = request.get_json()
+
+    # Update basic profile info (optional)
+    if 'first_name' in data:
+        user.first_name = data['first_name']
+    if 'last_name' in data:
+        user.last_name = data['last_name']
+    
+    # Update preferences
+    if 'preferred_content_types' in data:
+        # Ensure it's stored as a JSON string
+        user.preferred_content_types = json.dumps(data['preferred_content_types'])
+    if 'time_availability' in data:
+        user.time_availability = data['time_availability']
+    if 'difficulty_preference' in data:
+        user.difficulty_preference = data['difficulty_preference']
+
+    try:
+        db.session.commit()
+        return jsonify({"message": "Profile updated successfully!"}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating profile for user {user_id}: {e}")
+        return jsonify({"error": "Failed to update profile", "details": str(e)}), 500
+# >>> END NEW
+
+# <<< NEW: Change Password Endpoint
+@app.route('/users/<int:user_id>/change_password', methods=['PUT'])
+@jwt_required()
+def change_user_password(user_id):
+    current_user_id = get_jwt_identity()
+    if int(current_user_id) != user_id:
+        return jsonify({"error": "Unauthorized: Cannot change another user's password"}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    data = request.get_json()
+    old_password = data.get('old_password')
+    new_password = data.get('new_password')
+
+    if not old_password or not new_password:
+        return jsonify({"error": "Old password and new password are required"}), 400
+    
+    if not user.check_password(old_password):
+        return jsonify({"error": "Incorrect old password"}), 401 # Unauthorized
+    
+    user.set_password(new_password)
+    try:
+        db.session.commit()
+        return jsonify({"message": "Password changed successfully!"}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error changing password for user {user_id}: {e}")
+        return jsonify({"error": "Failed to change password", "details": str(e)}), 500
+# >>> END NEW
+
+
+# <<< NEW: Request OTP Endpoint
+@app.route('/request_otp', methods=['POST'])
+def request_otp():
+    data = request.get_json()
+    email = data.get('email', '').lower() # Convert to lowercase
+    
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+    
+    # Check if email is already registered
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "Email is already registered. Please login or reset password."}), 409 # Conflict
+
+    # Generate a 6-digit OTP
+    otp_code = ''.join(random.choices(string.digits, k=6))
+    
+    # Store OTP with expiration (e.g., 5 minutes from now)
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    
+    # Check if an OTP already exists for this email and update it
+    existing_otp = OTP.query.filter_by(email=email).first()
+    if existing_otp:
+        existing_otp.code = otp_code
+        existing_otp.expires_at = expires_at
+    else:
+        new_otp = OTP(email=email, code=otp_code, expires_at=expires_at)
+        db.session.add(new_otp)
+    
+    try:
+        db.session.commit()
+        
+        # Send OTP via email
+        msg = Message("Your GyanPath.ai OTP", recipients=[email]) # <<< RENAMED
+        msg.body = f"Your One-Time Password (OTP) for GyanPath.ai registration is: {otp_code}\n\nThis OTP is valid for 5 minutes." # <<< RENAMED
+        mail.send(msg)
+        
+        logger.info(f"OTP sent to {email}: {otp_code}")
+        return jsonify({"message": "OTP sent to your email. Please check your inbox (and spam folder)."}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to send OTP to {email}: {e}")
+        return jsonify({"error": "Failed to send OTP. Please try again later.", "details": str(e)}), 500
+# >>> END NEW REQUEST OTP
+
+
+# <<< NEW: Verify OTP Endpoint
+@app.route('/verify_otp', methods=['POST'])
+def verify_otp():
+    data = request.get_json()
+    email = data.get('email', '').lower()
+    otp_code = data.get('otp_code')
+
+    if not email or not otp_code:
+        return jsonify({"error": "Email and OTP code are required"}), 400
+    
+    otp_record = OTP.query.filter_by(email=email, code=otp_code).first()
+
+    if not otp_record:
+        return jsonify({"error": "Invalid OTP or email."}), 400
+    
+    if datetime.utcnow() > otp_record.expires_at:
+        db.session.delete(otp_record) # Delete expired OTP
+        db.session.commit()
+        return jsonify({"error": "OTP has expired. Please request a new one."}), 400
+    
+    # OTP is valid and not expired, delete it to prevent reuse
+    db.session.delete(otp_record)
+    db.session.commit()
+    
+    # In a real system, you might store this email as 'verified' in a temporary cache
+    # For now, we'll allow create_user immediately after a successful verify.
+    # The frontend will be responsible for proceeding to create_user right after verify_otp success.
+    return jsonify({"message": "OTP verified successfully! You can now proceed to register."}), 200
+# >>> END NEW VERIFY OTP
+
+
 @app.route('/users', methods=['GET'])
 def get_users():
     users = User.query.all()
-    users_list = [{"id": user.id, "email": user.email} for user in users]
+    users_list = [{"id": user.id, "email": user.email, "first_name": user.first_name, "last_name": user.last_name} for user in users] # <<< MODIFIED
     return jsonify(users_list)
 
 @app.route('/resources', methods=['POST'])
@@ -213,13 +457,13 @@ def add_resource():
 
     existing_resource = Resource.query.filter_by(url=data['url']).first()
     if existing_resource:
-        return jsonify({"error": "Resource with this URL already exists"}), 409
+        return jsonify({"message": "Resource with this URL already exists, skipping fetch and re-adding."}), 200
 
     new_resource = Resource(
         title=data['title'],
         url=data['url'],
         description=data.get('description'),
-        resource_type=data.get('resource_type', 'article'), # Default to article if not provided
+        resource_type=data.get('resource_type', 'article'),
         source=data.get('source'),
         difficulty=data.get('difficulty'),
         estimated_time_minutes=data.get('estimated_time_minutes'),
@@ -476,74 +720,64 @@ def generate_learning_path(user_id):
         logger.error(f"Error generating learning path: {e}")
         return jsonify({"error": "Failed to generate learning path", "details": str(e)}), 500
 
-# <<< NEW ENDPOINT: Automated Content Acquisition (Basic)
 @app.route('/fetch_and_add_resource', methods=['POST'])
-@jwt_required() # Protect this endpoint, only authenticated users/admins can trigger it
+@jwt_required()
 def fetch_and_add_resource():
     data = request.get_json()
     url_to_fetch = data.get('url')
-    contributed_by_user_id_str = get_jwt_identity() # Get user ID from JWT
-    contributed_by_user_id = int(contributed_by_user_id_str) # Convert to int
+    contributed_by_user_id_str = get_jwt_identity()
+    contributed_by_user_id = int(contributed_by_user_id_str)
 
     if not url_to_fetch:
         return jsonify({"error": "URL is required"}), 400
 
-    # Check if resource already exists by URL
     existing_resource = Resource.query.filter_by(url=url_to_fetch).first()
     if existing_resource:
-        return jsonify({"message": "Resource with this URL already exists, skipping fetch and re-adding."}), 200 # OK if exists
+        return jsonify({"message": "Resource with this URL already exists, skipping fetch and re-adding."}), 200
 
-    # Basic URL validation (more robust validation needed in production)
     if not (url_to_fetch.startswith('http://') or url_to_fetch.startswith('https://')):
         return jsonify({"error": "Invalid URL format. Must start with http:// or https://"}), 400
 
     try:
-        response = requests.get(url_to_fetch, timeout=10) # Add timeout
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        response = requests.get(url_to_fetch, timeout=10)
+        response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Extract title
         title = soup.title.string if soup.title else 'No Title Found'
         
-        # Extract description from meta tag
         description = ''
         meta_description = soup.find('meta', attrs={'name': 'description'})
         if meta_description:
             description = meta_description.get('content', '')
         else:
-            # Fallback to first paragraph if no meta description
             first_p = soup.find('p')
             if first_p:
-                description = first_p.get_text(strip=True)[:500] # Limit description length
+                description = first_p.get_text(strip=True)[:500]
 
-        # Attempt to determine resource type and source
-        resource_type = 'article' # Default
-        source = requests.utils.urlparse(url_to_fetch).hostname # Extract hostname as source
-        if 'youtube.com' in url_to_fetch or 'youtu.be' in url_to_fetch:
+        resource_type = 'article'
+        source = requests.utils.urlparse(url_to_fetch).hostname
+        if 'youtube.com' in url_to_fetch or 'youtu.be' in url_to_fetch: # More robust YouTube check
             resource_type = 'video'
             source = 'YouTube'
         elif 'github.com' in url_to_fetch:
             resource_type = 'project'
             source = 'GitHub'
-        # Add more type/source detection logic as needed
 
-        # Create new resource object
         new_resource = Resource(
-            title=title if title else url_to_fetch, # Use URL as title if not found
+            title=title if title else url_to_fetch,
             url=url_to_fetch,
             description=description,
             resource_type=resource_type,
             source=source,
-            difficulty='unknown', # Default, AI will later determine this
-            estimated_time_minutes=0, # Default, AI will later estimate this
-            contributed_by_user_id=contributed_by_user_id # Link to the user who triggered this
+            difficulty='unknown',
+            estimated_time_minutes=0,
+            contributed_by_user_id=contributed_by_user_id
         )
 
         db.session.add(new_resource)
         db.session.commit()
 
-        # Process for Knowledge Graph after saving to PG
         if nlp and neo4j_driver:
             process_resource_for_kg(new_resource.id, new_resource.title, new_resource.description, new_resource.url)
         else:
@@ -555,15 +789,13 @@ def fetch_and_add_resource():
             "title": new_resource.title,
             "url": new_resource.url
         }), 201
-
     except requests.exceptions.RequestException as e:
         logger.error(f"HTTP/Network error fetching resource {url_to_fetch}: {e}")
         return jsonify({"error": f"Failed to fetch URL: {e}"}), 400
     except Exception as e:
-        db.session.rollback() # Ensure rollback if DB operation fails after fetch
+        db.session.rollback()
         logger.error(f"Unexpected error adding fetched resource {url_to_fetch}: {e}")
         return jsonify({"error": "An unexpected error occurred while adding the resource.", "details": str(e)}), 500
-# >>> END NEW ENDPOINT
 
 # --- Main Application Entry Point ---
 if __name__ == '__main__':
