@@ -1,45 +1,3 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-}
 /* Global variables for consistent styling */
 :root {
   --sb-primary-color: #16a472; /* SkillBridge Green */
@@ -70,7 +28,8 @@ body {
   display: flex;
   min-width: 320px;
   min-height: 100vh;
-  font-family: var(--font-lato);
+  font-family: var(--font-lato); /* Default body font: Lato */
+  font-weight: 400; /* Default font weight for body text */
   color: var(--sb-text-dark);
   background-color: var(--sb-bg-light); /* Fallback */
 
@@ -104,56 +63,64 @@ body {
   z-index: 1000;
 }
 
-.app-main-header .header-left,
-.app-main-header .header-center,
-.app-main-header .header-right {
+.app-main-header .header-left {
+  /* MODIFIED: Allow to grow and shrink equally with right side */
+  flex: 1; /* Was flex: 0 0 auto; */
   display: flex;
   align-items: center;
+  gap: 15px;
+  justify-content: flex-start; /* Keep content to the left edge of its space */
 }
 
-.app-main-header .header-left {
-  gap: 15px;
-  flex: 1;
-  justify-content: flex-start;
-}
+/* ... (existing .app-main-header .header-center - remains unchanged) ... */
 
 .app-main-header .header-center {
-  flex: 2;
-  justify-content: center;
+  flex: 1; /* This remains flex:1 for balance, combined with auto margins */
   text-align: center;
+  margin-left: auto;
+  margin-right: auto;
 }
 
+.app-main-header .header-right {
+  /* MODIFIED: Allow to grow and shrink equally with left side */
+  flex: 1; /* Was flex: 0 0 auto; */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end; /* Push content to the right edge of its space */
+}
 .app-main-header h1 {
   font-family: var(--font-barlow-condensed);
-  font-size: 1.8em;
+  font-size: 1.6em;
   font-weight: 700;
   margin: 0;
   color: var(--sb-text-light);
+  white-space: nowrap;
 }
 
 .app-main-header .header-logo {
   height: 40px;
   filter: brightness(0) invert(1);
-  margin-right: 10px; /* Space between logo and text if re-added later */
+  margin-right: 10px;
 }
 
 .app-main-header .hamburger-icon {
   font-size: 1.8em;
   cursor: pointer;
-  margin-right: 15px; /* Space from logo/text */
+  margin-right: 15px;
 }
 
 .app-main-header .profile-info {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1;
-  justify-content: flex-end;
+  position: relative; /* For dropdown positioning */
 }
 
 .app-main-header .profile-info p {
   margin: 0;
   font-size: 1em;
+  font-family: var(--font-lato);
 }
 
 .app-main-header .profile-icon {
@@ -161,17 +128,62 @@ body {
   border: 1px solid var(--sb-text-light);
   border-radius: 50%;
   padding: 2px;
+  cursor: pointer;
 }
+
+/* --- Profile Dropdown Menu --- */
+.profile-dropdown {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  background-color: var(--sb-text-light);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  border-radius: 8px;
+  overflow: hidden;
+  min-width: 180px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.profile-dropdown a,
+.profile-dropdown button {
+  padding: 10px 15px;
+  text-decoration: none;
+  color: var(--sb-text-dark);
+  font-size: 0.95em;
+  display: block;
+  border: none;
+  background: none;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.profile-dropdown a:hover,
+.profile-dropdown button:hover {
+  background-color: var(--sb-card-bg);
+  color: var(--sb-text-dark);
+}
+
+.profile-dropdown hr {
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 5px 0;
+}
+
 
 /* --- Main Content Area (after header) --- */
 .main-app-content {
   flex-grow: 1;
-  padding: 30px 20px; /* Vertical padding 30px, horizontal padding 20px */
+  padding: 30px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 30px;
-  width: 100%; /* Take full width */
+  width: 100%;
   box-sizing: border-box;
 }
 
@@ -182,7 +194,7 @@ body {
   padding: 30px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.1);
   width: 100%;
-  max-width: 700px; /* Content cards remain centered within their max-width */
+  max-width: 700px;
   text-align: left;
   border: none;
   box-sizing: border-box;
@@ -192,30 +204,34 @@ body {
   color: var(--sb-primary-dark);
   font-size: 2em;
   font-family: var(--font-lato);
+  font-weight: 700;
   border-bottom: 2px solid var(--sb-primary-dark);
   padding-bottom: 10px;
   margin-bottom: 20px;
 }
 
 /* Input field styles within cards */
-.content-card input[type="text"],
-.content-card select {
+input[type="text"],
+input[type="email"],
+input[type="password"],
+select {
   padding: 12px 15px;
   border: 1px solid var(--sb-primary-color);
   border-radius: 8px;
   font-size: 1.1em;
-  width: calc(100% - 30px); /* Adjust for padding */
-  margin-bottom: 15px;
+  width: 100%;
   box-sizing: border-box;
+  font-family: var(--font-lato);
+  background-color: var(--sb-bg-light);
+  color: var(--sb-text-dark);
 }
 
-.content-card select {
-  height: 45px;
+input::placeholder {
+  color: #888;
 }
-
 
 /* Button styles within cards */
-.content-card button {
+button {
   padding: 15px 30px;
   font-size: 1.1em;
   background-color: var(--sb-primary-color);
@@ -225,17 +241,9 @@ body {
   letter-spacing: 1px;
 }
 
-.content-card button:hover:not(:disabled) {
-  background-color: var(--sb-primary-dark);
-}
-
-/* General button styling (inherited by login buttons unless overridden) */
-button {
-  transition: background-color 0.3s ease;
-}
-
 button:hover:not(:disabled) {
-  opacity: 0.9;
+  background-color: var(--sb-primary-dark);
+  opacity: 1;
 }
 
 button:disabled {
@@ -295,7 +303,106 @@ button:disabled {
     margin-bottom: 8px;
 }
 
-/* --- Login Page Styles (unchanged from previous step, but included for completeness) --- */
+/* --- Side Navigation Menu --- */
+.side-nav {
+  height: 100%;
+  width: 0;
+  position: fixed;
+  z-index: 1001;
+  top: 0;
+  left: 0;
+  background-color: var(--sb-primary-color);
+  overflow-x: hidden;
+  transition: 0.5s;
+  padding-top: 100px;
+  box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.side-nav.open {
+  width: 250px;
+}
+
+.side-nav a { /* General styling for all sidebar links */
+  padding: 10px 25px 10px 30px;
+  text-decoration: none;
+  font-size: 1.1em;
+  color: var(--sb-text-light);
+  display: block;
+  transition: 0.3s;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.side-nav a:hover {
+  background-color: var(--sb-primary-dark);
+  color: var(--sb-text-light);
+}
+
+.side-nav .closebtn {
+  position: absolute;
+  top: 15px;
+  right: 25px;
+  font-size: 2.5em;
+  text-decoration: none;
+  color: var(--sb-text-light);
+  cursor: pointer;
+  background: none;
+  padding: 0;
+  border: none;
+  line-height: 1;
+  /* MODIFIED: Ensure hover effect is only on the character itself, no box */
+  transition: color 0.3s ease; /* Only color changes on hover */
+}
+
+.side-nav .closebtn:hover { /* Specific hover for closebtn */
+  color: rgba(255, 255, 255, 0.8); /* Slightly dim white on hover */
+  background-color: transparent; /* Explicitly no background on hover */
+}
+
+
+/* Overlay for when side nav is open */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.5s ease;
+}
+
+.overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Adjust main content when side nav is open */
+.App.side-nav-open .main-app-content {
+  margin-left: 250px;
+  transition: margin-left 0.5s ease;
+}
+
+/* Specific styling for new sections in main app */
+.section-header {
+  color: var(--sb-primary-dark);
+  font-size: 2em;
+  font-family: var(--font-lato);
+  border-bottom: 2px solid var(--sb-primary-dark);
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+  text-align: left;
+  width: 100%;
+}
+
+
+/* --- Login Page Styles --- */
 .App.login-page {
   min-height: 100vh;
   min-width: 100vw;
@@ -372,7 +479,7 @@ button:disabled {
   font-family: var(--font-crimson-text);
   font-size: 2em;
   margin-top: 0;
-  margin-bottom: 30px;
+  margin-bottom: 20px; /* Reduced gap below heading */
   color: var(--sb-text-dark);
 }
 

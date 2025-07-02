@@ -1,18 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './App.css'; 
 
 function App() {
   // Authentication State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null); // Stores {id, email}
+  const [currentUser, setCurrentUser] = useState(null);
   const [accessToken, setAccessToken] = useState(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginMessage, setLoginMessage] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // Main App Content State (only loaded if logged in)
+  // Main App Content State
   const [error, setError] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState('dashboard');
 
   // Learning Path Generation State
   const [targetConcept, setTargetConcept] = useState("");
@@ -22,9 +24,26 @@ function App() {
 
   // Knowledge Assessment State
   const [knowledgeConcept, setKnowledgeConcept] = useState("");
-  const [knowledgeLevel, setKnowledgeLevel] = useState(0);
+  // MODIFIED: Initial state for knowledgeLevel to empty string for placeholder
+  const [knowledgeLevel, setKnowledgeLevel] = useState(""); 
+
   const [knowledgeUpdateMessage, setKnowledgeUpdateMessage] = useState("");
   const [knowledgeUpdateLoading, setKnowledgeUpdateLoading] = useState(false);
+
+  // All Resources List State (for 'All Resources' page)
+  const [allResources, setAllResources] = useState([]);
+  const [allResourcesLoading, setAllResourcesLoading] = useState(false);
+  const [allResourcesError, setAllResourcesError] = useState(null);
+
+  // Contribute Resource State
+  const [contributeUrl, setContributeUrl] = useState("");
+  const [contributeMessage, setContributeMessage] = useState("");
+  const [contributeLoading, setContributeLoading] = useState(false);
+
+  // Profile Dropdown State and Ref
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileRef = useRef();
+
 
   useEffect(() => {
     // Check for existing token in localStorage on component mount
@@ -35,8 +54,49 @@ function App() {
       setCurrentUser(JSON.parse(storedUser));
       setIsLoggedIn(true);
     }
-    // Removed all public status fetches and public resources list for cleaner UI
   }, []);
+
+  // Effect to fetch All Resources when the 'allResources' page is active
+  useEffect(() => {
+    if (currentPage === 'allResources' && isLoggedIn) {
+      setAllResourcesLoading(true);
+      setAllResourcesError(null);
+      fetch('http://localhost:5000/resources')
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => setAllResources(data))
+        .catch(err => {
+          console.error("Error fetching all resources:", err);
+          setAllResourcesError("Failed to load resources.");
+        })
+        .finally(() => {
+          setAllResourcesLoading(false);
+        });
+    }
+  }, [currentPage, isLoggedIn]);
+
+
+  // Click outside to close profile menu
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    if (profileMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [profileMenuOpen]);
+
 
   // Helper to get auth headers
   const getAuthHeaders = () => {
@@ -78,6 +138,7 @@ function App() {
         setLoginMessage("Login successful!");
         setLoginEmail("");
         setLoginPassword("");
+        setCurrentPage('dashboard');
       })
       .catch(error => {
         console.error("Login Error:", error);
@@ -104,7 +165,10 @@ function App() {
     setKnowledgeUpdateMessage("");
     setTargetConcept("");
     setKnowledgeConcept("");
-    setKnowledgeLevel(0);
+    setKnowledgeLevel(""); // Reset to empty string
+    setSidebarOpen(false);
+    setProfileMenuOpen(false);
+    setCurrentPage('dashboard');
   };
 
   // Function to fetch learning path
@@ -152,8 +216,9 @@ function App() {
       alert("Please log in to update knowledge.");
       return;
     }
-    if (!knowledgeConcept || knowledgeLevel === 0) {
-      alert("Please enter a concept and select a level!");
+    // MODIFIED: Check for empty string or 0 (if user manually types 0)
+    if (!knowledgeConcept || knowledgeLevel === "" || isNaN(knowledgeLevel)) {
+      alert("Please enter a concept and select a valid level!");
       return;
     }
     setKnowledgeUpdateLoading(true);
@@ -163,7 +228,7 @@ function App() {
     fetch(`http://localhost:5000/users/${currentUser.id}/knowledge`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ concept_name: knowledgeConcept, level: knowledgeLevel }),
+      body: JSON.stringify({ concept_name: knowledgeConcept, level: parseInt(knowledgeLevel) }), // Ensure level is integer
     })
       .then(response => {
         if (!response.ok) {
@@ -184,6 +249,221 @@ function App() {
       });
   };
 
+  // Function to handle resource contribution
+  const handleContributeResource = () => {
+    if (!accessToken || !currentUser) {
+      setContributeMessage("Please log in to contribute resources.");
+      return;
+    }
+    if (!contributeUrl) {
+      setContributeMessage("Please enter a URL to contribute.");
+      return;
+    }
+
+    setContributeLoading(true);
+    setContributeMessage("");
+    setError(null);
+
+    fetch('http://localhost:5000/fetch_and_add_resource', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ url: contributeUrl }),
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(err => { throw new Error(err.error || 'Failed to add resource'); });
+      }
+      return response.json();
+    })
+    .then(data => {
+      setContributeMessage(data.message);
+      setContributeUrl("");
+      console.log("Contribute Result:", data);
+      if (currentPage === 'allResources') { 
+        setAllResourcesLoading(true);
+        fetch('http://localhost:5000/resources')
+          .then(res => res.json())
+          .then(data => setAllResources(data))
+          .catch(err => setAllResourcesError("Failed to refresh resources after contribution."))
+          .finally(() => setAllResourcesLoading(false));
+      }
+    })
+    .catch(error => {
+      console.error("Contribute Error:", error);
+      setContributeMessage(`Error: ${error.message}`);
+    })
+    .finally(() => {
+      setContributeLoading(false);
+    });
+  };
+
+  // Sidebar Toggle Functions
+  const openSidebar = () => {
+    setSidebarOpen(true);
+  };
+
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+  };
+
+  // Toggle Profile Menu
+  const toggleProfileMenu = () => {
+    setProfileMenuOpen(prev => !prev);
+  };
+
+  // Content Renderers for different pages
+  const renderContent = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return (
+          <>
+            <section className="content-card">
+              <h2>Assess Your Knowledge</h2>
+              <div style={{ marginBottom: '15px' }}>
+                <label htmlFor="knowledgeConceptInput" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Concept:
+                </label>
+                <input
+                  id="knowledgeConceptInput"
+                  type="text"
+                  value={knowledgeConcept}
+                  onChange={(e) => setKnowledgeConcept(e.target.value)}
+                  placeholder="e.g., Python Basics"
+                />
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <label htmlFor="knowledgeLevelSelect" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Select Level
+                </label>
+                <select
+                  id="knowledgeLevelSelect"
+                  value={knowledgeLevel}
+                  onChange={(e) => setKnowledgeLevel(e.target.value)} // Don't parse until validation
+                >
+                  <option value="">-- Select Level --</option> {/* NEW PLACEHOLDER */}
+                  <option value="1">1(Novice)</option>
+                  <option value="2">2(Familiar)</option>
+                  <option value="3">3 (Competent)</option>
+                  <option value="4">4 (Proficient)</option>
+                  <option value="5">5 (Expert)</option>
+                </select>
+              </div>
+              <button 
+                onClick={updateKnowledge} 
+                disabled={knowledgeUpdateLoading}
+              >
+                {knowledgeUpdateLoading ? 'UPDATING...' : 'UPDATE KNOWLEDGE'}
+              </button>
+              {knowledgeUpdateMessage && <p style={{ marginTop: '10px', color: knowledgeUpdateMessage.startsWith('Error') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)' }}>{knowledgeUpdateMessage}</p>}
+            </section>
+
+            <section className="content-card">
+              <h2>Generate Personalized Learning Path</h2>
+              <div style={{ marginBottom: '15px' }}>
+                <label htmlFor="targetConceptInput" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  What do you want to learn today?
+                </label>
+                <input
+                  id="targetConceptInput"
+                  type="text"
+                  value={targetConcept}
+                  onChange={(e) => setTargetConcept(e.target.value)}
+                  placeholder="e.g., Machine Learning Fundamentals"
+                />
+              </div>
+              <button 
+                onClick={fetchLearningPath} 
+                disabled={pathLoading}
+              >
+                {pathLoading ? 'GENERATING...' : 'GENERATE PATH'}
+              </button>
+
+              {pathLoading && <p>Generating your personalized path...</p>}
+              {learningPath && (
+                <div style={{ marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '20px' }}>
+                  <h3>Path for "{learningPath.target_concept}"</h3>
+                  {learningPath.path && learningPath.path.length > 0 ? (
+                    learningPath.path.map((step, index) => (
+                      <div key={index} className="path-step-card">
+                        <h4>Step {index + 1}: Learn "{step.concept}"</h4>
+                        {step.resources && step.resources.length > 0 ? (
+                          <ul>
+                            {step.resources.map(res => (
+                              <li key={res.id}>
+                                <a href={res.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sb-accent-blue)', textDecoration: 'none' }}>
+                                  {res.title}
+                                </a> ({res.resource_type || 'N/A'})
+                                <p style={{fontSize: '0.9em', color: '#666'}}>{res.description}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p>No resources found for this concept in the path (yet).</p>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p>{pathMessage || "No specific steps recommended at this time based on your knowledge."}</p>
+                  )}
+                </div>
+              )}
+            </section>
+          </>
+        );
+      case 'allResources':
+        return (
+          <section className="content-card">
+            <h2>Search Uploaded Resources</h2>
+            {allResourcesLoading && <p>Loading resources...</p>}
+            {allResourcesError && <p style={{color: 'var(--sb-accent-red)'}}>{allResourcesError}</p>}
+            {!allResourcesLoading && allResources.length === 0 && !allResourcesError ? (
+              <p>No resources found. Try contributing one!</p>
+            ) : (
+              <div className="resources-list">
+                {allResources.map(resource => (
+                  <div key={resource.id} className="resource-card">
+                    <h3>{resource.title}</h3>
+                    <p><strong>Type:</strong> {resource.resource_type} | <strong>Source:</strong> {resource.source || 'N/A'}</p>
+                    <p><strong>Difficulty:</strong> {resource.difficulty || 'N/A'} | <strong>Est. Time:</strong> {resource.estimated_time_minutes ? `${resource.estimated_time_minutes} mins` : 'N/A'}</p>
+                    <p>{resource.description}</p>
+                    <a href={resource.url} target="_blank" rel="noopener noreferrer">Learn More</a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      case 'contribute':
+        return (
+          <section className="content-card">
+            <h2>Contribute a New Resource</h2>
+            <div style={{ marginBottom: '15px' }}>
+              <label htmlFor="contributeUrlInput" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                Resource URL:
+              </label>
+              <input
+                id="contributeUrlInput"
+                type="text"
+                value={contributeUrl}
+                onChange={(e) => setContributeUrl(e.target.value)}
+                placeholder="https://example.com/great-article"
+              />
+            </div>
+            <button
+              onClick={handleContributeResource}
+              disabled={contributeLoading}
+            >
+              {contributeLoading ? 'ADDING...' : 'ADD RESOURCE'}
+            </button>
+            {contributeMessage && <p style={{ marginTop: '10px', color: contributeMessage.startsWith('Error') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)' }}>{contributeMessage}</p>}
+          </section>
+        );
+      default:
+        return <section className="content-card"><h2>Page Not Found</h2></section>;
+    }
+  };
+
+
   // --- Conditional Rendering of Login Page vs. Main App ---
   if (!isLoggedIn) {
     return (
@@ -199,7 +479,7 @@ function App() {
         <div className="login-panel-right">
             <div className="login-form-container">
                 <h2>Login / Sign Up</h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%' }}>
                     <input
                         type="email"
                         placeholder="Username (Email)"
@@ -215,22 +495,23 @@ function App() {
                     <button
                         onClick={handleLogin}
                         disabled={loginLoading}
+                        style={{padding: '18px 25px'}}
                     >
                         {loginLoading ? 'LOGGING IN...' : 'LOGIN'}
                     </button>
                     {loginMessage && <p style={{ color: loginMessage.includes('failed') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)', fontSize: '0.9em', textAlign: 'center' }}>{loginMessage}</p>}
                     
-                    <p style={{ fontSize: '1em', textAlign: 'center', marginTop: '15px' }}>
+                    <p style={{ fontSize: '1em', textAlign: 'center', marginTop: '10px' }}>
                         Create new account, <a href="#" onClick={() => alert("Sign Up functionality coming soon! Please use Postman to create an account for now.")} style={{ color: 'var(--sb-accent-blue)', textDecoration: 'none', fontWeight: 'bold' }}>Sign Up</a>
                     </p>
 
                     {/* Social Login Buttons (Placeholders for now) */}
                     <hr style={{ width: '100%', border: 'none', borderTop: '1px solid #eee', margin: '20px 0' }}/>
                     <div className="social-login" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <button style={{ backgroundColor: '#db4437' }}>
+                        <button style={{ backgroundColor: '#db4437', padding: '12px', fontSize: '1.1em', borderRadius: '8px', fontWeight: 'bold', textTransform: 'uppercase' }}>
                             <img src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google icon" style={{ height: '20px' }}/> LOGIN WITH GOOGLE
                         </button>
-                        <button style={{ backgroundColor: '#333' }}>
+                        <button style={{ backgroundColor: '#333', padding: '12px', fontSize: '1.1em', borderRadius: '8px', fontWeight: 'bold', textTransform: 'uppercase' }}>
                             <img src="https://img.icons8.com/ios-filled/24/ffffff/github.png" alt="GitHub icon" style={{ height: '20px' }}/> LOGIN WITH GITHUB
                         </button>
                     </div>
@@ -243,130 +524,52 @@ function App() {
 
   // --- Main Application Content (if isLoggedIn) ---
   return (
-    <div className="App">
+    <div className={`App ${sidebarOpen ? 'side-nav-open' : ''}`}>
       {/* Top Navigation Bar */}
       <header className="app-main-header">
         <div className="header-left">
-          <span className="hamburger-icon">&#9776;</span> {/* Hamburger Menu Icon */}
+          <span className="hamburger-icon" onClick={openSidebar}>&#9776;</span> {/* Hamburger Menu Icon */}
         </div>
         <div className="header-center">
-            {/* Removed img src="/favicon.png" alt="SkillBridge Logo" className="header-logo" */}
             <h1>SKILLBRIDGE: Personalized Learning Navigator</h1>
         </div>
         <div className="header-right">
-          <div className="profile-info">
+          <div className="profile-info" ref={profileRef}>
             <p>Welcome, {currentUser?.email.split('@')[0] || 'User'}</p>
-            <span className="profile-icon">&#128100;</span>
-            <button onClick={handleLogout} style={{ backgroundColor: 'transparent', color: 'var(--sb-text-light)', border: '1px solid var(--sb-text-light)', fontWeight: 'normal' }}>
-              Logout
-            </button>
+            <span className="profile-icon" onClick={toggleProfileMenu}>&#128100;</span>
+            
+            {profileMenuOpen && ( // Render dropdown if open
+              <div className="profile-dropdown">
+                <a href="#" onClick={() => { alert("Profile Settings coming soon!"); setProfileMenuOpen(false); }}>Profile Settings</a>
+                <a href="#" onClick={() => { alert("App Settings coming soon!"); setProfileMenuOpen(false); }}>Settings</a>
+                <hr/>
+                <a href="#" onClick={() => { handleLogout(); setProfileMenuOpen(false); }}>Logout</a>
+              </div>
+            )}
           </div>
         </div>
       </header>
+
+      {/* Side Navigation Menu */}
+      <div id="mySidenav" className={`side-nav ${sidebarOpen ? 'open' : ''}`}>
+        <a href="#" className="closebtn" onClick={closeSidebar}>&times;</a>
+        <a href="#" onClick={() => { setCurrentPage('dashboard'); closeSidebar(); }}>Dashboard</a>
+        <a href="#" onClick={() => { setCurrentPage('allResources'); closeSidebar(); }}>Search Uploaded Resources</a>
+        <a href="#" onClick={() => { setCurrentPage('contribute'); closeSidebar(); }}>Contribute Resource</a>
+        <a href="#" onClick={() => { alert("My Progress coming soon!"); closeSidebar(); }}>My Progress</a>
+        <a href="#" onClick={() => { alert("Explore Concepts coming soon!"); closeSidebar(); }}>Explore Concepts</a>
+      </div>
+
+      {/* Overlay to close sidebar on click outside */}
+      {sidebarOpen && <div className="overlay active" onClick={closeSidebar}></div>}
+
 
       {/* Main Content Area */}
       <main className="main-app-content">
         {error && <p style={{ color: 'var(--sb-accent-red)' }}>App Error: {error}</p>}
         
-        {/* Removed Backend Status Messages from UI */}
-        {/* Removed 'Available Learning Resources (All)' section */}
+        {renderContent()}
 
-        {/* Assess Your Knowledge Section */}
-        <section className="content-card">
-          <h2>Assess Your Knowledge</h2>
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="knowledgeConceptInput" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              Concept:
-            </label>
-            <input
-              id="knowledgeConceptInput"
-              type="text"
-              value={knowledgeConcept}
-              onChange={(e) => setKnowledgeConcept(e.target.value)}
-              placeholder="Concept?"
-            />
-          </div>
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="knowledgeLevelSelect" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              Select Level
-            </label>
-            <select
-              id="knowledgeLevelSelect"
-              value={knowledgeLevel}
-              onChange={(e) => setKnowledgeLevel(parseInt(e.target.value))}
-            >
-              <option value="0">Novice (L1)</option>
-              <option value="1">1 (Novice)</option>
-              <option value="2">2 (Familiar)</option>
-              <option value="3">3 (Competent)</option>
-              <option value="4">4 (Proficient)</option>
-              <option value="5">5 (Expert)</option>
-            </select>
-          </div>
-          <button 
-            onClick={updateKnowledge} 
-            disabled={knowledgeUpdateLoading}
-          >
-            {knowledgeUpdateLoading ? 'UPDATING...' : 'UPDATE KNOWLEDGE'}
-          </button>
-          {knowledgeUpdateMessage && <p style={{ marginTop: '10px', color: knowledgeUpdateMessage.startsWith('Error') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)' }}>{knowledgeUpdateMessage}</p>}
-        </section>
-
-        {/* Learning Path Generation Section */}
-        <section className="content-card">
-          <h2>Generate Personalized Learning Path</h2>
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="targetConceptInput" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              What do you want to learn today?
-            </label>
-            <input
-              id="targetConceptInput"
-              type="text"
-              value={targetConcept}
-              onChange={(e) => setTargetConcept(e.target.value)}
-              placeholder="What do you want to learn today?"
-            />
-          </div>
-          <button 
-            onClick={fetchLearningPath} 
-            disabled={pathLoading}
-          >
-            {pathLoading ? 'GENERATING...' : 'GENERATE PATH'}
-          </button>
-
-          {pathLoading && <p>Generating your personalized path...</p>}
-          {learningPath && (
-            <div style={{ marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '20px' }}>
-              <h3>Path for "{learningPath.target_concept}"</h3>
-              {learningPath.path && learningPath.path.length > 0 ? (
-                learningPath.path.map((step, index) => (
-                  <div key={index} className="path-step-card">
-                    <h4>Step {index + 1}: Learn "{step.concept}"</h4>
-                    {step.resources && step.resources.length > 0 ? (
-                      <ul>
-                        {step.resources.map(res => (
-                          <li key={res.id}>
-                            <a href={res.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--sb-accent-blue)', textDecoration: 'none' }}>
-                              {res.title}
-                            </a> ({res.resource_type || 'N/A'})
-                            <p style={{fontSize: '0.9em', color: '#666'}}>{res.description}</p>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p>No resources found for this concept in the path (yet).</p>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <p>{pathMessage || "No specific steps recommended at this time based on your knowledge."}</p>
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* The default Vite/React elements */}
-        {/* This div containing "Edit src/App.jsx" and Vite/React logos should be completely gone */}
       </main>
     </div>
   );
