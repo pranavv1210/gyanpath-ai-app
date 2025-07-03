@@ -4,7 +4,7 @@ import './App.css';
 function App() {
   // Authentication State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null); // Stores {id, email, first_name, last_name}
   const [accessToken, setAccessToken] = useState(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -12,14 +12,14 @@ function App() {
   const [loginLoading, setLoginLoading] = useState(false);
 
   // Sign Up State
-  const [isSigningUp, setIsSigningUp] = useState(false); // Controls Login vs Signup form
+  const [isSigningUp, setIsSigningUp] = useState(false);
   const [signupFirstName, setSignupFirstName] = useState("");
   const [signupLastName, setSignupLastName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
-  const [signupMessage, setSignupMessage] = useState(""); // General signup messages
-  const [signupLoading, setSignupLoading] = useState(false); // For initial signup button
+  const [signupMessage, setSignupMessage] = useState("");
+  const [signupLoading, setSignupLoading] = useState(false);
   // OTP states
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState("");
@@ -40,7 +40,7 @@ function App() {
 
   // Knowledge Assessment State
   const [knowledgeConcept, setKnowledgeConcept] = useState("");
-  const [knowledgeLevel, setKnowledgeLevel] = useState(""); // Default to empty string for placeholder
+  const [knowledgeLevel, setKnowledgeLevel] = useState("");
   const [knowledgeUpdateMessage, setKnowledgeUpdateMessage] = useState("");
   const [knowledgeUpdateLoading, setKnowledgeUpdateLoading] = useState(false);
 
@@ -171,7 +171,8 @@ function App() {
   };
 
   // Login Function
-  const handleLogin = () => {
+  const handleLogin = (e) => { // Added 'e' parameter
+    e.preventDefault(); // Prevent default form submission behavior (page reload)
     if (!loginEmail || !loginPassword) {
       setLoginMessage("Please enter email and password.");
       return;
@@ -195,10 +196,12 @@ function App() {
       })
       .then(data => {
         setAccessToken(data.access_token);
-        setCurrentUser({ id: data.user_id, email: data.email });
+        // MODIFIED: Store first_name and last_name
+        setCurrentUser({ id: data.user_id, email: data.email, first_name: data.first_name, last_name: data.last_name }); 
         setIsLoggedIn(true);
         localStorage.setItem('accessToken', data.access_token);
-        localStorage.setItem('currentUser', JSON.stringify({ id: data.user_id, email: data.email }));
+        // MODIFIED: Store full user object including name
+        localStorage.setItem('currentUser', JSON.stringify({ id: data.user_id, email: data.email, first_name: data.first_name, last_name: data.last_name }));
         setLoginMessage("Login successful!");
         setLoginEmail("");
         setLoginPassword("");
@@ -380,8 +383,9 @@ function App() {
     setIsDarkMode(prevMode => !prevMode);
   };
 
-  // Handle Signup Function
-  const handleRequestOtp = () => {
+  // Handle Signup Flow (Request OTP, Verify OTP, Create User)
+  const handleRequestOtp = (e) => { // Added 'e' parameter
+    e.preventDefault(); // Prevent default form submission behavior (page reload)
     if (!signupFirstName || !signupLastName || !signupEmail || !signupPassword || !signupConfirmPassword) {
       setSignupMessage("All fields (Name, Email, Password) are required.");
       return;
@@ -390,9 +394,9 @@ function App() {
       setSignupMessage("Passwords do not match.");
       return;
     }
-    setSignupLoading(true); // General loading for signup flow
+    setSignupLoading(true);
     setSignupMessage("");
-    setOtpMessage(""); // Clear OTP specific messages
+    setOtpMessage("");
     setError(null);
 
     fetch('http://localhost:5000/request_otp', {
@@ -409,26 +413,27 @@ function App() {
       return response.json();
     })
     .then(data => {
-      setSignupMessage(data.message); // Show message like "OTP sent"
-      setOtpSent(true); // Move to OTP verification step
+      setSignupMessage(data.message);
+      setOtpSent(true);
     })
     .catch(error => {
       console.error("OTP Request Error:", error);
       setSignupMessage(`OTP Request failed: ${error.message}`);
     })
     .finally(() => {
-      setSignupLoading(false); // Only set loading false for initial request
+      setSignupLoading(false);
     });
   };
 
-  const handleVerifyOtpAndRegister = () => {
+  const handleVerifyOtpAndRegister = (e) => { // Added 'e' parameter
+    e.preventDefault(); // Prevent default form submission behavior
     if (!otpCode) {
       setOtpMessage("OTP code is required.");
       return;
     }
-    setOtpLoading(true); // Loading for OTP verification button
+    setOtpLoading(true);
     setOtpMessage("");
-    setSignupMessage(""); // Clear general signup messages too
+    setSignupMessage("");
 
     // Step 2: Verify OTP
     fetch('http://localhost:5000/verify_otp', {
@@ -445,7 +450,7 @@ function App() {
       return response.json();
     })
     .then(data => {
-      setOtpMessage(data.message); // Show message like "OTP verified"
+      setOtpMessage(data.message);
       
       // Step 3: Proceed with User Creation (only if OTP verified successfully)
       return fetch('http://localhost:5000/create_user', {
@@ -468,8 +473,8 @@ function App() {
       return response.json();
     })
     .then(data => {
-      setSignupMessage(`Registration successful! You can now login.`); // Final success message
-      setOtpMessage(""); // Clear OTP message
+      setSignupMessage(`Registration successful! You can now login.`);
+      setOtpMessage("");
       // Clear all signup fields and reset flow
       setSignupEmail("");
       setSignupFirstName("");
@@ -477,17 +482,22 @@ function App() {
       setSignupPassword("");
       setSignupConfirmPassword("");
       setOtpCode("");
-      setOtpSent(false); // Reset OTP flow
-      // setIsSigningUp(false); // Do not reset isSigningUp here, handled by handleLogin after
+      setOtpSent(false);
+      // Automatically attempt login after successful registration
+      // Pass the registered email and password to handleLogin
+      return handleLogin({
+        preventDefault: () => {}, // Mock preventDefault for handleLogin
+        target: { email: signupEmail, password: signupPassword } // Pass values as if from form
+      }); 
     })
     .catch(error => {
       console.error("Final Registration Error:", error);
-      setOtpMessage(`Registration failed: ${error.message}`); // Show error for final step
+      setOtpMessage(`Registration failed: ${error.message}`);
       setOtpSent(true); // Keep OTP input visible for re-attempt
     })
     .finally(() => {
-      setOtpLoading(false); // Stop OTP button loading
-      setSignupLoading(false); // Ensure general signup loading is false
+      setOtpLoading(false);
+      setSignupLoading(false);
     });
   };
 
@@ -864,7 +874,7 @@ function App() {
         </div>
         <div className="header-right">
           <div className="profile-info" ref={profileRef}>
-            <p>Welcome, {currentUser?.email.split('@')[0] || 'User'}</p>
+            <p>Welcome, {currentUser?.first_name || 'User'}</p> {/* MODIFIED: Display first_name */}
             <span className="profile-icon" onClick={toggleProfileMenu}>&#128100;</span>
             
             {profileMenuOpen && ( // Render dropdown if open
