@@ -11,13 +11,21 @@ function App() {
   const [loginMessage, setLoginMessage] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // NEW STATE FOR SIGNUP
-  const [isSigningUp, setIsSigningUp] = useState(false);
+  // Sign Up State
+  const [isSigningUp, setIsSigningUp] = useState(false); // Controls Login vs Signup form
+  const [signupFirstName, setSignupFirstName] = useState("");
+  const [signupLastName, setSignupLastName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
-  const [signupMessage, setSignupMessage] = useState("");
-  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupMessage, setSignupMessage] = useState(""); // General signup messages
+  const [signupLoading, setSignupLoading] = useState(false); // For initial signup button
+  // OTP states
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpMessage, setOtpMessage] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+
 
   // Main App Content State
   const [error, setError] = useState(null);
@@ -373,47 +381,116 @@ function App() {
   };
 
   // Handle Signup Function
-  const handleSignUp = () => {
-    if (!signupEmail || !signupPassword || !signupConfirmPassword) {
-      setSignupMessage("All fields are required.");
+  const handleRequestOtp = () => {
+    if (!signupFirstName || !signupLastName || !signupEmail || !signupPassword || !signupConfirmPassword) {
+      setSignupMessage("All fields (Name, Email, Password) are required.");
       return;
     }
     if (signupPassword !== signupConfirmPassword) {
       setSignupMessage("Passwords do not match.");
       return;
     }
-    setSignupLoading(true);
+    setSignupLoading(true); // General loading for signup flow
     setSignupMessage("");
+    setOtpMessage(""); // Clear OTP specific messages
     setError(null);
 
-    fetch('http://localhost:5000/create_user', {
+    fetch('http://localhost:5000/request_otp', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email: signupEmail, password: signupPassword }),
+      body: JSON.stringify({ email: signupEmail }),
     })
-      .then(response => {
-        if (!response.ok) {
-          return response.json().then(err => { throw new Error(err.error || 'Signup failed'); });
-        }
-        return response.json();
-      })
-      .then(data => {
-        setSignupMessage(`Signup successful! You can now login. User ID: ${data.user_id}`);
-        setSignupEmail("");
-        setSignupPassword("");
-        setSignupConfirmPassword("");
-        setIsSigningUp(false);
-      })
-      .catch(error => {
-        console.error("Signup Error:", error);
-        setSignupMessage(`Signup failed: ${error.message}`);
-      })
-      .finally(() => {
-        setSignupLoading(false);
-      });
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(err => { throw new Error(err.error || 'Failed to request OTP'); });
+      }
+      return response.json();
+    })
+    .then(data => {
+      setSignupMessage(data.message); // Show message like "OTP sent"
+      setOtpSent(true); // Move to OTP verification step
+    })
+    .catch(error => {
+      console.error("OTP Request Error:", error);
+      setSignupMessage(`OTP Request failed: ${error.message}`);
+    })
+    .finally(() => {
+      setSignupLoading(false); // Only set loading false for initial request
+    });
   };
+
+  const handleVerifyOtpAndRegister = () => {
+    if (!otpCode) {
+      setOtpMessage("OTP code is required.");
+      return;
+    }
+    setOtpLoading(true); // Loading for OTP verification button
+    setOtpMessage("");
+    setSignupMessage(""); // Clear general signup messages too
+
+    // Step 2: Verify OTP
+    fetch('http://localhost:5000/verify_otp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: signupEmail, otp_code: otpCode }),
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(err => { throw new Error(err.error || 'OTP verification failed'); });
+      }
+      return response.json();
+    })
+    .then(data => {
+      setOtpMessage(data.message); // Show message like "OTP verified"
+      
+      // Step 3: Proceed with User Creation (only if OTP verified successfully)
+      return fetch('http://localhost:5000/create_user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          first_name: signupFirstName, 
+          last_name: signupLastName,
+          email: signupEmail, 
+          password: signupPassword 
+        }),
+      });
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(err => { throw new Error(err.error || 'User registration failed'); });
+      }
+      return response.json();
+    })
+    .then(data => {
+      setSignupMessage(`Registration successful! You can now login.`); // Final success message
+      setOtpMessage(""); // Clear OTP message
+      // Clear all signup fields and reset flow
+      setSignupEmail("");
+      setSignupFirstName("");
+      setSignupLastName("");
+      setSignupPassword("");
+      setSignupConfirmPassword("");
+      setOtpCode("");
+      setOtpSent(false); // Reset OTP flow
+      // setIsSigningUp(false); // Do not reset isSigningUp here, handled by handleLogin after
+    })
+    .catch(error => {
+      console.error("Final Registration Error:", error);
+      setOtpMessage(`Registration failed: ${error.message}`); // Show error for final step
+      setOtpSent(true); // Keep OTP input visible for re-attempt
+    })
+    .finally(() => {
+      setOtpLoading(false); // Stop OTP button loading
+      setSignupLoading(false); // Ensure general signup loading is false
+    });
+  };
+
 
   // Content Renderers for different pages
   const renderContent = () => {
@@ -597,7 +674,7 @@ function App() {
                       placeholder="Enter new password"
                     />
                   </div>
-                  <div style={{ marginBottom: '15px' }}>
+                  <div style={{ marginBottom: '15px' }}> {/* This div was missing closing tag */}
                     <label htmlFor="confirmNewPasswordInput" style={{ display: 'block', marginBottom: '5px' }}>Confirm New Password:</label>
                     <input
                       id="confirmNewPasswordInput"
@@ -606,7 +683,7 @@ function App() {
                       onChange={(e) => setConfirmNewPassword(e.target.value)}
                       placeholder="Confirm new password"
                     />
-                  </div>
+                  </div> {/* <<< MISSING CLOSING DIV ADDED HERE */}
                   <button onClick={() => alert("Password change functionality coming soon!")}>Change Password</button>
                 </div>
 
@@ -658,43 +735,115 @@ function App() {
         {/* Right Login/Sign Up Panel */}
         <div className="login-panel-right">
             <div className="login-form-container">
-                <h2>Login / Sign Up</h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%' }}>
-                    <input
-                        type="email"
-                        placeholder="Username (Email)"
-                        value={loginEmail}
-                        onChange={(e) => setLoginEmail(e.target.value)}
-                    />
-                    <input
-                        type="password"
-                        placeholder="Password"
-                        value={loginPassword}
-                        onChange={(e) => setLoginPassword(e.target.value)}
-                    />
-                    <button
-                        onClick={handleLogin}
-                        disabled={loginLoading}
-                        style={{padding: '18px 25px'}}
-                    >
-                        {loginLoading ? 'LOGGING IN...' : 'LOGIN'}
-                    </button>
-                    {loginMessage && <p style={{ color: loginMessage.includes('failed') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)', fontSize: '0.9em', textAlign: 'center' }}>{loginMessage}</p>}
-                    
-                    <p style={{ fontSize: '1em', textAlign: 'center', marginTop: '10px' }}>
-                        Create new account, <a href="#" onClick={() => setIsSigningUp(true)} style={{ color: 'var(--sb-accent-blue)', textDecoration: 'none', fontWeight: 'bold' }}>Sign Up</a>
-                    </p>
+                {/* Conditional Rendering: Login Form vs. Signup Form */}
+                {!isSigningUp ? (
+                    <> {/* Login Form */}
+                        <h2>Login / Sign Up</h2>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%' }}>
+                            <input
+                                type="email"
+                                placeholder="Username (Email)"
+                                value={loginEmail}
+                                onChange={(e) => setLoginEmail(e.target.value)}
+                            />
+                            <input
+                                type="password"
+                                placeholder="Password"
+                                value={loginPassword}
+                                onChange={(e) => setLoginPassword(e.target.value)}
+                            />
+                            <button
+                                onClick={handleLogin}
+                                disabled={loginLoading}
+                                style={{padding: '18px 25px'}}
+                            >
+                                {loginLoading ? 'LOGGING IN...' : 'LOGIN'}
+                            </button>
+                            {loginMessage && <p style={{ color: loginMessage.includes('failed') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)', fontSize: '0.9em', textAlign: 'center' }}>{loginMessage}</p>}
+                            
+                            <p style={{ fontSize: '1em', textAlign: 'center', marginTop: '10px' }}>
+                                Create new account, <a href="#" onClick={() => setIsSigningUp(true)} style={{ color: 'var(--sb-accent-blue)', textDecoration: 'none', fontWeight: 'bold' }}>Sign Up</a>
+                            </p>
+                        </div>
+                    </>
+                ) : (
+                    <> {/* Sign Up Form */}
+                        <h2>Register for GyanPath.ai</h2>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%' }}>
+                            <input
+                                type="text"
+                                placeholder="First Name"
+                                value={signupFirstName}
+                                onChange={(e) => setSignupFirstName(e.target.value)}
+                            />
+                            <input
+                                type="text"
+                                placeholder="Last Name"
+                                value={signupLastName}
+                                onChange={(e) => setSignupLastName(e.target.value)}
+                            />
+                            <input
+                                type="email"
+                                placeholder="Email"
+                                value={signupEmail}
+                                onChange={(e) => setSignupEmail(e.target.value)}
+                            />
+                            <input
+                                type="password"
+                                placeholder="Password"
+                                value={signupPassword}
+                                onChange={(e) => setSignupPassword(e.target.value)}
+                            />
+                            <input
+                                type="password"
+                                placeholder="Confirm Password"
+                                value={signupConfirmPassword}
+                                onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                            />
+                            {!otpSent ? (
+                                <button
+                                    onClick={handleRequestOtp}
+                                    disabled={signupLoading}
+                                    style={{padding: '18px 25px'}}
+                                >
+                                    {signupLoading ? 'SENDING OTP...' : 'SEND OTP'}
+                                </button>
+                            ) : (
+                                <>
+                                    <input
+                                        type="text"
+                                        placeholder="Enter OTP"
+                                        value={otpCode}
+                                        onChange={(e) => setOtpCode(e.target.value)}
+                                    />
+                                    <button
+                                        onClick={handleVerifyOtpAndRegister}
+                                        disabled={otpLoading}
+                                        style={{padding: '18px 25px'}}
+                                    >
+                                        {otpLoading ? 'VERIFYING...' : 'VERIFY & REGISTER'}
+                                    </button>
+                                </>
+                            )}
+                            {signupMessage && <p style={{ color: signupMessage.includes('failed') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)', fontSize: '0.9em', textAlign: 'center' }}>{signupMessage}</p>}
+                            {otpMessage && <p style={{ color: otpMessage.includes('failed') || otpMessage.includes('expired') ? 'var(--sb-accent-red)' : 'var(--sb-primary-color)', fontSize: '0.9em', textAlign: 'center' }}>{otpMessage}</p>}
 
-                    {/* Social Login Buttons (Placeholders for now) */}
-                    <hr style={{ width: '100%', border: 'none', borderTop: '1px solid #eee', margin: '20px 0' }}/>
-                    <div className="social-login" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <button style={{ backgroundColor: '#db4437', padding: '12px', fontSize: '1.1em', borderRadius: '8px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                            <img src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google icon" style={{ height: '20px' }}/> LOGIN WITH GOOGLE
-                        </button>
-                        <button style={{ backgroundColor: '#333', padding: '12px', fontSize: '1.1em', borderRadius: '8px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                            <img src="https://img.icons8.com/ios-filled/24/ffffff/github.png" alt="GitHub icon" style={{ height: '20px' }}/> LOGIN WITH GITHUB
-                        </button>
-                    </div>
+                            <p style={{ fontSize: '1em', textAlign: 'center', marginTop: '10px' }}>
+                                Already have an account? <a href="#" onClick={() => setIsSigningUp(false)} style={{ color: 'var(--sb-accent-blue)', textDecoration: 'none', fontWeight: 'bold' }}>Login</a>
+                            </p>
+                        </div>
+                    </>
+                )}
+
+                {/* Social Login Buttons - Displayed below both forms */}
+                <hr style={{ width: '100%', border: 'none', borderTop: '1px solid #eee', margin: '20px 0' }}/>
+                <div className="social-login" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <button style={{ backgroundColor: '#db4437', padding: '12px', fontSize: '1.1em', borderRadius: '8px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                        <img src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google icon" style={{ height: '20px' }}/> LOGIN WITH GOOGLE
+                    </button>
+                    <button style={{ backgroundColor: '#333', padding: '12px', fontSize: '1.1em', borderRadius: '8px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                        <img src="https://img.icons8.com/ios-filled/24/ffffff/github.png" alt="GitHub icon" style={{ height: '20px' }}/> LOGIN WITH GITHUB
+                    </button>
                 </div>
             </div>
         </div>
